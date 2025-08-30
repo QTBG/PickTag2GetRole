@@ -1,7 +1,8 @@
+from __future__ import annotations
 import discord
 from discord.ext import commands, tasks
 import asyncio
-from typing import Set, Optional
+from typing import Set, Optional, List
 
 class TagMonitor(commands.Cog):
     def __init__(self, bot):
@@ -45,18 +46,19 @@ class TagMonitor(commands.Cog):
     
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag spécifié"""
-        if not member.guild_avatar:
-            return False
-            
-        # Discord stocke les tags dans la description de l'avatar de serveur
-        # ou dans le statut personnalisé
-        member_tag = getattr(member, 'guild_avatar_decoration', None)
-        if member_tag and tag.lower() in str(member_tag).lower():
-            return True
-            
-        # Vérifier aussi dans le nom d'affichage
+        # Vérifier dans le nom d'affichage (nickname ou username)
         if member.display_name and tag.lower() in member.display_name.lower():
             return True
+            
+        # Vérifier aussi dans le nom d'utilisateur global
+        if member.name and tag.lower() in member.name.lower():
+            return True
+            
+        # Vérifier dans le statut personnalisé si disponible
+        if hasattr(member, 'activity') and member.activity:
+            if isinstance(member.activity, discord.CustomActivity) and member.activity.name:
+                if tag.lower() in member.activity.name.lower():
+                    return True
             
         return False
     
