@@ -89,6 +89,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 ### Variables d'environnement
 
 - `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
+- `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
 
 ### Base de données
 
@@ -163,8 +164,10 @@ docker logs picktag2getrole
    - Copier le token qui apparaît (⚠️ ne sera montré qu'une fois!)
    - C'est ce token qu'il faut mettre dans le fichier `.env`
 
-4. **Activer les intents**
-   - Sur la même page, activer "SERVER MEMBERS INTENT"
+4. **Activer les intents** (⚠️ TRÈS IMPORTANT)
+   - Sur la même page, activer ces deux intents :
+     - **SERVER MEMBERS INTENT** : Pour accéder aux membres
+     - **PRESENCE INTENT** : Pour accéder aux tags de serveur (primary guild)
    - Sauvegarder les changements
 
 ## 🤝 Permissions Discord requises
@@ -199,9 +202,12 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 ## 🐛 Dépannage
 
 ### Le bot ne détecte pas les tags
+- **Vérifier les intents Discord** : PRESENCE INTENT doit être activé dans le Developer Portal
 - Vérifier que le tag est exactement comme configuré (respecter la casse)
 - S'assurer que le bot a les permissions nécessaires
-- Utiliser `/scan` pour forcer une vérification
+- Utiliser `/scan debug:True` pour activer les logs détaillés (consultez bot.log)
+- Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) en public
+- Pour un debug permanent, définir `LOG_LEVEL=DEBUG` dans le fichier .env
 
 ### Erreurs de permissions
 - Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer

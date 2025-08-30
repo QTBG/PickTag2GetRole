@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+import logging
 
 import asyncio
 from dotenv import load_dotenv
@@ -8,13 +9,28 @@ from dotenv import load_dotenv
 from typing import Dict, List, Optional
 from database import DatabaseManager
 
-# Charger les variables d'environnement
+# Charger les variables d'environnement EN PREMIER
 load_dotenv()
+
+# Configuration du logging APRÈS le chargement des variables d'environnement
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('bot.log', encoding='utf-8')
+    ]
+)
+logger = logging.getLogger('PickTag2GetRole')
+logger.info(f"Logging level set to: {log_level}")
+logger.info(f"Discord.py version: {discord.__version__}")
 
 # Configuration optimisée pour un VPS léger
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
+intents.presences = True  # Nécessaire pour accéder à primary_guild
 intents.guild_messages = False  # Désactiver les messages pour économiser des ressources
 intents.message_content = False
 
@@ -37,14 +53,14 @@ class PickTag2GetRole(commands.Bot):
         await self.load_configs_to_cache()
         await self.load_extension('cogs.tag_monitor')
         await self.load_extension('cogs.commands')
-        print(f"Bot ready! Connected as {self.user}")
+        logger.info(f"Bot ready! Connected as {self.user}")
         
     async def load_configs_to_cache(self):
         """Load all enabled configurations to cache for performance"""
         try:
             self.config_cache = await self.db.get_all_enabled_configs()
         except Exception as e:
-            print(f"Error loading configs to cache: {e}")
+            logger.error(f"Error loading configs to cache: {e}")
             self.config_cache = {}
     
 
@@ -77,27 +93,27 @@ bot = PickTag2GetRole()
 async def on_guild_remove(guild: discord.Guild):
     """When bot is removed from a server, delete its data"""
     await bot.db.delete_guild_config(guild.id)
-    print(f"Bot removed from {guild.name} ({guild.id}), data deleted")
+    logger.info(f"Bot removed from {guild.name} ({guild.id}), data deleted")
 
 @bot.event
 async def on_ready():
     """Événement déclenché quand le bot est prêt"""
-    print(f'Bot connected as {bot.user.name}')
-    print(f'ID: {bot.user.id}')
-    print(f'Servers: {len(bot.guilds)}')
+    logger.info(f'Bot connected as {bot.user.name}')
+    logger.info(f'ID: {bot.user.id}')
+    logger.info(f'Servers: {len(bot.guilds)}')
     
     # Synchroniser les commandes slash
     try:
         synced = await bot.tree.sync()
-        print(f"{len(synced)} commands synced")
+        logger.info(f"{len(synced)} commands synced")
     except Exception as e:
-        print(f"Error syncing commands: {e}")
+        logger.error(f"Error syncing commands: {e}")
 
 async def main():
     """Fonction principale pour lancer le bot"""
     token = os.getenv('DISCORD_TOKEN')
     if not token:
-        print("ERROR: Discord token not found in .env file")
+        logger.error("Discord token not found in .env file")
         return
     
     async with bot:

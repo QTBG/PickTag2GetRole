@@ -3,6 +3,9 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 from typing import Set, Optional, List
+import logging
+
+logger = logging.getLogger('PickTag2GetRole.TagMonitor')
 
 class TagMonitor(commands.Cog):
     def __init__(self, bot):
@@ -46,11 +49,52 @@ class TagMonitor(commands.Cog):
     
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
-        # Vérifier uniquement le tag de serveur (primary guild)
-        if hasattr(member, 'primary_guild') and member.primary_guild:
-            # Vérifier si le tag configuré est contenu dans le tag du serveur principal
-            if member.primary_guild.tag and tag.lower() in member.primary_guild.tag.lower():
+        try:
+            logger.debug(f"Checking member: {member.name} (ID: {member.id})")
+            
+            # Vérifier si l'attribut primary_guild existe
+            if not hasattr(member, 'primary_guild'):
+                logger.debug(f"{member.name} - No primary_guild attribute found")
+                return False
+            
+            # Accéder à primary_guild
+            pg = member.primary_guild
+            if pg is None:
+                logger.debug(f"{member.name} - primary_guild is None")
+                return False
+                
+            logger.debug(f"{member.name} - Primary Guild found: ID={pg.id}, Tag={pg.tag}, Identity enabled={pg.identity_enabled}")
+            
+            # Vérifier si l'identité est activée (publiquement affichée)
+            if pg.identity_enabled == False:
+                logger.debug(f"{member.name} has identity_enabled=False, skipping")
+                return False
+            
+            # Vérifier si le tag existe
+            if not pg.tag:
+                logger.debug(f"{member.name} has no tag set (tag is None or empty)")
+                return False
+                
+            # Comparaison du tag
+            logger.debug(f"{member.name} - Comparing tags: member_tag='{pg.tag}' vs looking_for='{tag}'")
+            
+            # Comparaison exacte du tag (insensible à la casse)
+            if pg.tag.lower() == tag.lower():
+                logger.info(f"✅ {member.name} has matching tag: {pg.tag}")
                 return True
+            # Si le tag configuré contient un #, essayer une correspondance partielle
+            elif '#' in tag and tag.lower() in pg.tag.lower():
+                logger.info(f"✅ {member.name} has partial matching tag: {pg.tag} (looking for {tag})")
+                return True
+            else:
+                logger.debug(f"{member.name} has different tag: '{pg.tag}' (looking for '{tag}')")
+            
+        except AttributeError as e:
+            # En cas d'erreur d'attribut, log pour debug
+            logger.error(f"AttributeError accessing primary_guild for {member.name}: {e}")
+            logger.debug(f"Member attributes: {dir(member)}")
+        except Exception as e:
+            logger.error(f"Unexpected error checking tag for {member.name}: {type(e).__name__}: {e}")
             
         return False
     
@@ -71,15 +115,17 @@ class TagMonitor(commands.Cog):
                 # Pour retirer, on doit modifier la liste des rôles
                 try:
                     await member.remove_roles(role, reason="Tag de serveur retiré")
+                    logger.info(f"Removed role {role.name} from {member.name}")
                 except discord.HTTPException as e:
-                    print(f"Erreur lors du retrait du rôle {role.name} à {member}: {e}")
+                    logger.error(f"Error removing role {role.name} from {member}: {e}")
         
         # Ajouter les rôles en une seule fois
         if should_have_roles and roles_to_update:
             try:
                 await member.add_roles(*roles_to_update, reason="Tag de serveur détecté")
+                logger.info(f"Added roles {[r.name for r in roles_to_update]} to {member.name}")
             except discord.HTTPException as e:
-                print(f"Erreur lors de l'ajout des rôles à {member}: {e}")
+                logger.error(f"Error adding roles to {member}: {e}")
     
     @tasks.loop(minutes=5)  # Vérification toutes les 5 minutes pour économiser les ressources
     async def check_tags(self):
@@ -120,7 +166,7 @@ class TagMonitor(commands.Cog):
                 self.member_cache[guild.id] = current_members_with_tag
                 
         except Exception as e:
-            print(f"Erreur dans check_tags: {e}")
+            logger.error(f"Error in check_tags: {e}")
         finally:
             self.processing = False
     

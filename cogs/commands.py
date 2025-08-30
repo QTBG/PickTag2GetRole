@@ -2,6 +2,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import List
+import logging
+
+logger = logging.getLogger('PickTag2GetRole.Commands')
 
 class ConfigCommands(commands.Cog):
     def __init__(self, bot):
@@ -184,8 +187,9 @@ class ConfigCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="scan", description="Manually scan all members now")
+    @app_commands.describe(debug="Show detailed information about each member scanned")
     @app_commands.default_permissions(manage_roles=True)
-    async def scan(self, interaction: discord.Interaction):
+    async def scan(self, interaction: discord.Interaction, debug: bool = False):
         """Force an immediate scan of all members"""
         config = await self.bot.get_guild_config(interaction.guild.id)
         
@@ -220,31 +224,71 @@ class ConfigCommands(commands.Cog):
         # Scanner tous les membres
         members_updated = 0
         total_members = 0
+        members_with_tag = 0
+        
+        # Vérifier le niveau de log actuel
+        current_level = logging.getLogger('PickTag2GetRole.TagMonitor').level
+        logger.debug(f"Current TagMonitor log level: {logging.getLevelName(current_level)}")
+        
+        # Configurer le niveau de log temporairement si debug est activé
+        if debug:
+            # Sauvegarder le niveau actuel
+            original_level = current_level
+            logging.getLogger('PickTag2GetRole.TagMonitor').setLevel(logging.DEBUG)
+            logger.info(f"Starting scan with debug mode enabled for tag: {tag_to_watch}")
+        else:
+            logger.info(f"Starting scan for tag: {tag_to_watch}")
+            # Si on n'est pas en mode debug mais que LOG_LEVEL=DEBUG, on veut quand même les logs
+            if current_level == logging.DEBUG:
+                logger.debug("Running in normal mode but DEBUG logging is enabled globally")
         
         async for member in interaction.guild.fetch_members(limit=None):
             total_members += 1
             has_tag = tag_monitor._member_has_tag(member, tag_to_watch)
             
+            if has_tag:
+                members_with_tag += 1
+            
             # Vérifier si le membre doit avoir les rôles
             needs_update = False
+            roles_to_add = []
+            roles_to_remove = []
+            
             for role_id in role_ids:
                 role = interaction.guild.get_role(role_id)
                 if role:
                     has_role = role in member.roles
                     if has_tag and not has_role:
                         needs_update = True
+                        roles_to_add.append(role.name)
                     elif not has_tag and has_role:
                         needs_update = True
+                        roles_to_remove.append(role.name)
             
             if needs_update:
+                if debug:
+                    logger.debug(f"Updating {member.name}: Adding {roles_to_add}, Removing {roles_to_remove}")
                 await tag_monitor._update_member_roles(member, has_tag, role_ids)
                 members_updated += 1
+        
+        # Restaurer le niveau de log original si debug était activé
+        if debug:
+            logging.getLogger('PickTag2GetRole.TagMonitor').setLevel(original_level)
         
         embed = discord.Embed(
             title="✅ Scan completed",
             color=discord.Color.green(),
-            description=f"**{total_members}** members scanned\n**{members_updated}** members updated"
+            description=f"**{total_members}** members scanned\n**{members_with_tag}** members with tag '{tag_to_watch}'\n**{members_updated}** members updated"
         )
+        
+        if debug:
+            embed.add_field(
+                name="Debug Mode",
+                value="Debug logs have been written to bot.log file",
+                inline=False
+            )
+        
+        logger.info(f"Scan completed: {total_members} scanned, {members_with_tag} with tag, {members_updated} updated")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
