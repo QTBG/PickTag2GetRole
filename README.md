@@ -149,21 +149,26 @@ docker logs discord-tag-bot
 
 ## 🤝 Permissions Discord requises
 
-Le bot a besoin des permissions suivantes :
-- **Manage Roles** : Pour ajouter/retirer des rôles
-- **View Channels** : Pour accéder aux serveurs
-- **Read Members** : Pour lire les informations des membres
+Le bot a besoin UNIQUEMENT de ces permissions :
+- **Manage Roles** (268435456) : Pour ajouter/retirer des rôles
+- **View Channels** (1024) : Pour accéder aux serveurs
 
 Pour inviter le bot :
 1. Dans le Developer Portal, aller dans "OAuth2" > "URL Generator"
 2. Cocher `bot` et `applications.commands`
-3. Sélectionner les permissions nécessaires
+3. Sélectionner UNIQUEMENT : Manage Roles + View Channels
 4. Utiliser l'URL générée pour inviter le bot
 
-Lien d'invitation avec permissions :
+Lien d'invitation avec permissions minimales :
 ```
-https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=268435456&scope=bot%20applications.commands
+https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=268436480&scope=bot%20applications.commands
 ```
+
+⚠️ Le bot n'a PAS besoin de :
+- Read Message History
+- Send Messages
+- Read Messages
+- Ou toute autre permission
 
 ## 📝 Notes importantes
 
