@@ -3,27 +3,42 @@
 *Last updated: January 2025*
 
 ## 1. Acceptance
-By using PickTag2GetRole, you agree to these terms.
+By adding PickTag2GetRole to your Discord server, you agree to these terms.
 
 ## 2. Service Description
-PickTag2GetRole is a Discord bot that monitors server tags and assigns roles automatically.
+PickTag2GetRole monitors Discord server tags (primary guild tags) and automatically assigns/removes roles based on tag presence.
 
-## 3. Acceptable Use
-- Use the bot only for its intended purpose
+## 3. Required Permissions
+The bot requires:
+- Manage Roles (to assign/remove roles)
+- View Server Members (to see member information)
+- Read Presence Updates (to detect tag changes)
+
+## 4. Acceptable Use
+- Use the bot only for legitimate role management
+- Do not attempt to exploit or abuse the bot
 - Comply with Discord's Terms of Service
-- Do not abuse, exploit, or spam the bot
+- Ensure proper role hierarchy (bot role must be higher than managed roles)
 
-## 4. Data & Privacy
-See our [Privacy Policy](PRIVACY_POLICY.md) for data handling information.
+## 5. Limitations
+- Bot can only manage roles lower than its own role
+- Tag monitoring requires users to have their server identity publicly displayed
+- Bot checks tags every 5 minutes and on member updates
 
-## 5. No Warranty
-The bot is provided "as is" without any guarantees or warranty.
+## 6. Data Handling
+See our [Privacy Policy](PRIVACY_POLICY.md) for detailed information.
 
-## 6. Limitation of Liability
-We are not responsible for any damages or issues arising from bot usage.
+## 7. No Warranty
+The bot is provided "as is" without any guarantees of uptime or functionality.
 
-## 7. Changes
-We may modify these terms or the bot at any time.
+## 8. Open Source
+This is an open-source project under MIT License. You can self-host for full control.
 
-## 8. Contact
+## 9. Changes
+We may update these terms or the bot functionality at any time.
+
+## 10. Termination
+We reserve the right to terminate service for abuse or Discord ToS violations.
+
+## 11. Contact
 Issues or questions: https://github.com/QTBG/PickTag2GetRole

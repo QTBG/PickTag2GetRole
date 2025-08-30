@@ -3,29 +3,47 @@
 *Last updated: January 2025*
 
 ## What We Collect
-- Discord server IDs and names
-- Discord user IDs and usernames
-- Role configurations you create
-- Server tags being monitored
+- **Server Information**: Discord server ID where the bot is installed
+- **User Information**: Discord user ID and username of members in the server
+- **Tag Configuration**: The specific server tag you configure the bot to monitor
+- **Role Configuration**: The role IDs you configure to be assigned/removed
+- **Primary Guild Data**: User's primary server information (server ID, tag, and whether it's publicly displayed)
 
 ## How We Use Data
-- To monitor tags and assign roles as configured
-- To store your bot settings
-- Data is stored locally in the bot's database
+- Monitor if users have the configured server tag in their profile
+- Automatically assign or remove the configured roles based on tag presence
+- Store your configuration settings in a local SQLite database
+- Perform periodic checks every 5 minutes to ensure accuracy
 
 ## We Do NOT
-- Collect message content
-- Share data with third parties
-- Use data for advertising
-- Store personal information beyond Discord IDs
+- Read or store message content
+- Access private messages or DMs
+- Share any data with third parties
+- Store any personal information beyond Discord IDs
+- Track user activity beyond tag presence
+- Access any data outside of the configured server
+
+## Data Storage
+- All data is stored locally in SQLite database files
+- Database location: `data/bot_data.db`
+- Only configuration data is persisted (guild_id, tag_to_watch, role_ids, enabled status)
+- User data is only processed in memory for tag checking
 
 ## Your Rights
-- View your configuration using bot commands
-- Delete your data by removing the bot from your server
-- Request data deletion via GitHub
+- View your configuration with `/status` command
+- Disable monitoring with `/toggle` command
+- Remove all data by kicking the bot from your server (data is automatically deleted)
+- Request manual data deletion via GitHub
+
+## Data Retention
+- Configuration data is kept as long as the bot remains in your server
+- When the bot is removed, all server data is automatically deleted
+- No user data is permanently stored
 
 ## Security
-Data is stored locally with standard security measures. As an open-source project, you can review our code.
+- Data is stored locally with file system permissions
+- No external API calls except Discord's official API
+- Open-source code allows full transparency
 
 ## Contact
-Questions: https://github.com/QTBG/PickTag2GetRole
+Questions or concerns: https://github.com/QTBG/PickTag2GetRole
