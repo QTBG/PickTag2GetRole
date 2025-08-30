@@ -8,45 +8,18 @@ from contextlib import asynccontextmanager
 
 class DatabaseManager:
     def __init__(self, db_path: str = 'data/bot_data.db'):
-        # Ensure data directory exists with proper permissions
+        # Créer le répertoire data s'il n'existe pas
         data_dir = os.path.dirname(db_path)
         if data_dir:
-            try:
-                os.makedirs(data_dir, exist_ok=True, mode=0o755)
-                # Ensure the directory is writable
-                if not os.access(data_dir, os.W_OK):
-                    print(f"Warning: Directory {data_dir} is not writable")
-            except PermissionError as e:
-                print(f"Permission error creating directory {data_dir}: {e}")
-                # Try to use /tmp as fallback
-                self.db_path = '/tmp/bot_data.db'
-                print(f"Using fallback database path: {self.db_path}")
-            except Exception as e:
-                print(f"Error creating directory {data_dir}: {e}")
-                self.db_path = '/tmp/bot_data.db'
-                print(f"Using fallback database path: {self.db_path}")
+            os.makedirs(data_dir, exist_ok=True)
         
-        if not hasattr(self, 'db_path'):
-            self.db_path = db_path
-            
+        self.db_path = db_path
         self.init_lock = asyncio.Lock()
         
     async def initialize(self):
         """Initialize the database with required tables"""
         async with self.init_lock:
-            try:
-                # Ensure the database file exists and is writable
-                db_dir = os.path.dirname(self.db_path)
-                if db_dir and not os.path.exists(db_dir):
-                    os.makedirs(db_dir, exist_ok=True, mode=0o755)
-                
-                # Touch the file to ensure it exists
-                if not os.path.exists(self.db_path):
-                    # Create an empty file
-                    open(self.db_path, 'a').close()
-                    os.chmod(self.db_path, 0o664)
-                
-                async with aiosqlite.connect(self.db_path) as db:
+            async with aiosqlite.connect(self.db_path) as db:
                 await db.execute('''
                     CREATE TABLE IF NOT EXISTS guild_configs (
                         guild_id INTEGER PRIMARY KEY,
@@ -58,10 +31,6 @@ class DatabaseManager:
                     )
                 ''')
                 await db.commit()
-                print(f"Database initialized successfully at {self.db_path}")
-            except Exception as e:
-                print(f"Error initializing database: {e}")
-                raise
     
     @asynccontextmanager
     async def get_db(self):
