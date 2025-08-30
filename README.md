@@ -14,7 +14,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 ## 📋 Prérequis
 
 - Python 3.11+ ou Docker
-- Un token de bot Discord
+- Un bot Discord avec son token (voir section "Obtenir le token du bot")
 - Permissions du bot : 
   - Gérer les rôles
   - Voir les membres du serveur
@@ -128,12 +128,37 @@ docker run -d \
 docker logs discord-tag-bot
 ```
 
+## 🔑 Obtenir le token du bot
+
+1. **Créer une application Discord**
+   - Aller sur https://discord.com/developers/applications
+   - Cliquer sur "New Application" et donner un nom
+
+2. **Créer le bot**
+   - Dans le menu de gauche, cliquer sur "Bot"
+   - Cliquer sur "Add Bot"
+
+3. **Récupérer le token**
+   - Cliquer sur "Reset Token" 
+   - Copier le token qui apparaît (⚠️ ne sera montré qu'une fois!)
+   - C'est ce token qu'il faut mettre dans le fichier `.env`
+
+4. **Activer les intents**
+   - Sur la même page, activer "SERVER MEMBERS INTENT"
+   - Sauvegarder les changements
+
 ## 🤝 Permissions Discord requises
 
 Le bot a besoin des permissions suivantes :
 - **Manage Roles** : Pour ajouter/retirer des rôles
 - **View Channels** : Pour accéder aux serveurs
 - **Read Members** : Pour lire les informations des membres
+
+Pour inviter le bot :
+1. Dans le Developer Portal, aller dans "OAuth2" > "URL Generator"
+2. Cocher `bot` et `applications.commands`
+3. Sélectionner les permissions nécessaires
+4. Utiliser l'URL générée pour inviter le bot
 
 Lien d'invitation avec permissions :
 ```
