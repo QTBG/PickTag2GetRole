@@ -2,6 +2,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import List
+import logging
+
+logger = logging.getLogger('PickTag2GetRole.Commands')
 
 class ConfigCommands(commands.Cog):
     def __init__(self, bot):
@@ -222,7 +225,15 @@ class ConfigCommands(commands.Cog):
         members_updated = 0
         total_members = 0
         members_with_tag = 0
-        debug_info = []
+        
+        # Configurer le niveau de log temporairement si debug est activé
+        if debug:
+            # Sauvegarder le niveau actuel
+            original_level = logging.getLogger('PickTag2GetRole.TagMonitor').level
+            logging.getLogger('PickTag2GetRole.TagMonitor').setLevel(logging.DEBUG)
+            logger.info(f"Starting scan with debug mode enabled for tag: {tag_to_watch}")
+        else:
+            logger.info(f"Starting scan for tag: {tag_to_watch}")
         
         async for member in interaction.guild.fetch_members(limit=None):
             total_members += 1
@@ -231,29 +242,31 @@ class ConfigCommands(commands.Cog):
             if has_tag:
                 members_with_tag += 1
             
-            # Collecter les informations de debug si demandé
-            if debug and total_members <= 20:  # Limiter à 20 pour éviter un message trop long
-                primary_guild_info = "No primary guild"
-                if hasattr(member, 'primary_guild') and member.primary_guild:
-                    pg = member.primary_guild
-                    primary_guild_info = f"Tag: {pg.tag or 'None'}, ID: {pg.id or 'None'}, Identity enabled: {pg.identity_enabled}"
-                
-                debug_info.append(f"{member.name}: {primary_guild_info} - Has tag: {has_tag}")
-            
             # Vérifier si le membre doit avoir les rôles
             needs_update = False
+            roles_to_add = []
+            roles_to_remove = []
+            
             for role_id in role_ids:
                 role = interaction.guild.get_role(role_id)
                 if role:
                     has_role = role in member.roles
                     if has_tag and not has_role:
                         needs_update = True
+                        roles_to_add.append(role.name)
                     elif not has_tag and has_role:
                         needs_update = True
+                        roles_to_remove.append(role.name)
             
             if needs_update:
+                if debug:
+                    logger.debug(f"Updating {member.name}: Adding {roles_to_add}, Removing {roles_to_remove}")
                 await tag_monitor._update_member_roles(member, has_tag, role_ids)
                 members_updated += 1
+        
+        # Restaurer le niveau de log original si debug était activé
+        if debug:
+            logging.getLogger('PickTag2GetRole.TagMonitor').setLevel(original_level)
         
         embed = discord.Embed(
             title="✅ Scan completed",
@@ -261,18 +274,14 @@ class ConfigCommands(commands.Cog):
             description=f"**{total_members}** members scanned\n**{members_with_tag}** members with tag '{tag_to_watch}'\n**{members_updated}** members updated"
         )
         
-        if debug and debug_info:
+        if debug:
             embed.add_field(
-                name="Debug Information (first 20 members)",
-                value="\n".join(debug_info[:10]) if len(debug_info) > 10 else "\n".join(debug_info),
+                name="Debug Mode",
+                value="Debug logs have been written to bot.log file",
                 inline=False
             )
-            if len(debug_info) > 10:
-                embed.add_field(
-                    name="Debug Information (continued)",
-                    value="\n".join(debug_info[10:20]),
-                    inline=False
-                )
+        
+        logger.info(f"Scan completed: {total_members} scanned, {members_with_tag} with tag, {members_updated} updated")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 

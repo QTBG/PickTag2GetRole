@@ -89,6 +89,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 ### Variables d'environnement
 
 - `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
+- `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
 
 ### Base de données
 
@@ -204,8 +205,9 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 - **Vérifier les intents Discord** : PRESENCE INTENT doit être activé dans le Developer Portal
 - Vérifier que le tag est exactement comme configuré (respecter la casse)
 - S'assurer que le bot a les permissions nécessaires
-- Utiliser `/scan debug:True` pour voir les détails de chaque membre
+- Utiliser `/scan debug:True` pour activer les logs détaillés (consultez bot.log)
 - Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) en public
+- Pour un debug permanent, définir `LOG_LEVEL=DEBUG` dans le fichier .env
 
 ### Erreurs de permissions
 - Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer
