@@ -34,13 +34,13 @@ class PickTag2GetRole(commands.Bot):
         await self.load_configs()
         await self.load_extension('cogs.tag_monitor')
         await self.load_extension('cogs.commands')
-        print(f"Bot prêt! Connecté en tant que {self.user}")
+        print(f"Bot ready! Connected as {self.user}")
         
     async def load_configs(self):
         """Charger les configurations depuis le fichier"""
         # Vérifier si c'est un répertoire et le supprimer si c'est le cas
         if os.path.exists(self.config_file) and os.path.isdir(self.config_file):
-            print(f"Attention: {self.config_file} est un répertoire, suppression...")
+            print(f"Warning: {self.config_file} is a directory, removing...")
             os.rmdir(self.config_file)
         
         try:
@@ -53,9 +53,9 @@ class PickTag2GetRole(commands.Bot):
             # Créer le fichier s'il n'existe pas
             self.configs = {}
             await self.save_configs()
-            print(f"Fichier {self.config_file} créé avec une configuration vide")
+            print(f"File {self.config_file} created with empty configuration")
         except Exception as e:
-            print(f"Erreur lors du chargement des configs: {e}")
+            print(f"Error loading configs: {e}")
             self.configs = {}
     
     async def save_configs(self):
@@ -65,7 +65,7 @@ class PickTag2GetRole(commands.Bot):
                 async with aiofiles.open(self.config_file, 'w') as f:
                     await f.write(json.dumps(self.configs, indent=2))
             except Exception as e:
-                print(f"Erreur lors de la sauvegarde des configs: {e}")
+                print(f"Error saving configs: {e}")
     
     def get_guild_config(self, guild_id: int) -> Optional[Dict]:
         """Obtenir la configuration d'un serveur"""
@@ -82,22 +82,22 @@ bot = PickTag2GetRole()
 @bot.event
 async def on_ready():
     """Événement déclenché quand le bot est prêt"""
-    print(f'Bot connecté en tant que {bot.user.name}')
+    print(f'Bot connected as {bot.user.name}')
     print(f'ID: {bot.user.id}')
-    print(f'Serveurs: {len(bot.guilds)}')
+    print(f'Servers: {len(bot.guilds)}')
     
     # Synchroniser les commandes slash
     try:
         synced = await bot.tree.sync()
-        print(f"{len(synced)} commandes synchronisées")
+        print(f"{len(synced)} commands synced")
     except Exception as e:
-        print(f"Erreur lors de la synchronisation des commandes: {e}")
+        print(f"Error syncing commands: {e}")
 
 async def main():
     """Fonction principale pour lancer le bot"""
     token = os.getenv('DISCORD_TOKEN')
     if not token:
-        print("ERREUR: Token Discord non trouvé dans le fichier .env")
+        print("ERROR: Discord token not found in .env file")
         return
     
     async with bot:

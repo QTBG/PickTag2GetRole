@@ -7,18 +7,18 @@ class ConfigCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="config", description="Configurer le bot pour surveiller un tag")
+    @app_commands.command(name="config", description="Configure the bot to monitor a server tag")
     @app_commands.describe(
-        tag="Le tag de serveur à surveiller",
-        roles="Les rôles à attribuer (mentionner les rôles séparés par des espaces)"
+        tag="The server tag to monitor",
+        roles="Roles to assign (mention roles separated by spaces)"
     )
     @app_commands.default_permissions(manage_roles=True)
     async def config(self, interaction: discord.Interaction, tag: str, roles: str):
-        """Configurer le tag à surveiller et les rôles à attribuer"""
+        """Configure the tag to monitor and roles to assign"""
         # Vérifier les permissions
         if not interaction.user.guild_permissions.manage_roles:
             await interaction.response.send_message(
-                "❌ Vous devez avoir la permission de gérer les rôles pour utiliser cette commande.",
+                "❌ You must have the Manage Roles permission to use this command.",
                 ephemeral=True
             )
             return
@@ -39,7 +39,7 @@ class ConfigCommands(commands.Cog):
         
         if not role_ids:
             await interaction.response.send_message(
-                "❌ Aucun rôle valide trouvé. Veuillez mentionner les rôles avec @.",
+                "❌ No valid roles found. Please mention roles with @.",
                 ephemeral=True
             )
             return
@@ -55,39 +55,39 @@ class ConfigCommands(commands.Cog):
         
         # Réponse
         embed = discord.Embed(
-            title="✅ Configuration mise à jour",
+            title="✅ Configuration updated",
             color=discord.Color.green(),
-            description=f"Le bot surveillera maintenant le tag **{tag}**"
+            description=f"The bot will now monitor the tag **{tag}**"
         )
         embed.add_field(
-            name="Rôles à attribuer",
+            name="Roles to assign",
             value="\n".join([f"• {name}" for name in role_names]),
             inline=False
         )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="status", description="Voir la configuration actuelle du bot")
+    @app_commands.command(name="status", description="View the current bot configuration")
     @app_commands.default_permissions(manage_roles=True)
     async def status(self, interaction: discord.Interaction):
-        """Afficher la configuration actuelle"""
+        """Display current configuration"""
         config = self.bot.get_guild_config(interaction.guild.id)
         
         if not config:
             await interaction.response.send_message(
-                "❌ Aucune configuration trouvée pour ce serveur. Utilisez `/config` pour configurer le bot.",
+                "❌ No configuration found for this server. Use `/config` to configure the bot.",
                 ephemeral=True
             )
             return
         
         embed = discord.Embed(
-            title="📊 Configuration actuelle",
+            title="📊 Current configuration",
             color=discord.Color.blue()
         )
         
         embed.add_field(
-            name="Tag surveillé",
-            value=config.get('tag_to_watch', 'Non défini'),
+            name="Monitored tag",
+            value=config.get('tag_to_watch', 'Not set'),
             inline=False
         )
         
@@ -99,33 +99,33 @@ class ConfigCommands(commands.Cog):
                 if role:
                     role_names.append(role.name)
                 else:
-                    role_names.append(f"Rôle supprimé (ID: {role_id})")
+                    role_names.append(f"Deleted role (ID: {role_id})")
             
             embed.add_field(
-                name="Rôles attribués",
+                name="Assigned roles",
                 value="\n".join([f"• {name}" for name in role_names]),
                 inline=False
             )
         else:
-            embed.add_field(name="Rôles", value="Aucun rôle configuré", inline=False)
+            embed.add_field(name="Roles", value="No roles configured", inline=False)
         
         embed.add_field(
-            name="État",
-            value="✅ Activé" if config.get('enabled', False) else "❌ Désactivé",
+            name="Status",
+            value="✅ Enabled" if config.get('enabled', False) else "❌ Disabled",
             inline=False
         )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="toggle", description="Activer ou désactiver la surveillance des tags")
+    @app_commands.command(name="toggle", description="Enable or disable tag monitoring")
     @app_commands.default_permissions(manage_roles=True)
     async def toggle(self, interaction: discord.Interaction):
-        """Activer/désactiver le bot pour ce serveur"""
+        """Enable/disable the bot for this server"""
         config = self.bot.get_guild_config(interaction.guild.id)
         
         if not config:
             await interaction.response.send_message(
-                "❌ Aucune configuration trouvée. Utilisez `/config` d'abord.",
+                "❌ No configuration found. Use `/config` first.",
                 ephemeral=True
             )
             return
@@ -134,21 +134,64 @@ class ConfigCommands(commands.Cog):
         config['enabled'] = not config.get('enabled', False)
         await self.bot.set_guild_config(interaction.guild.id, config)
         
-        status = "✅ activée" if config['enabled'] else "❌ désactivée"
+        status = "✅ enabled" if config['enabled'] else "❌ disabled"
         await interaction.response.send_message(
-            f"La surveillance des tags a été {status}.",
+            f"Tag monitoring has been {status}.",
             ephemeral=True
         )
     
-    @app_commands.command(name="scan", description="Scanner manuellement tous les membres maintenant")
+    @app_commands.command(name="help", description="Show all available commands")
+    async def help(self, interaction: discord.Interaction):
+        """Display help for all commands"""
+        embed = discord.Embed(
+            title="📚 PickTag2GetRole - Commands",
+            description="Here are all available commands:",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(
+            name="/config `tag` `@role1 @role2...`",
+            value="Configure the bot to monitor a specific server tag and assign roles to members who have it.",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/status",
+            value="View the current configuration (monitored tag, assigned roles, enabled/disabled status).",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/toggle",
+            value="Enable or disable tag monitoring for this server.",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/scan",
+            value="Manually scan all server members and update their roles based on the current configuration.",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/help",
+            value="Show this help message.",
+            inline=False
+        )
+        
+        embed.set_footer(text="Note: Most commands require the 'Manage Roles' permission.")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="scan", description="Manually scan all members now")
     @app_commands.default_permissions(manage_roles=True)
     async def scan(self, interaction: discord.Interaction):
-        """Forcer un scan immédiat de tous les membres"""
+        """Force an immediate scan of all members"""
         config = self.bot.get_guild_config(interaction.guild.id)
         
         if not config or not config.get('enabled', False):
             await interaction.response.send_message(
-                "❌ Le bot n'est pas activé pour ce serveur. Utilisez `/toggle` pour l'activer.",
+                "❌ The bot is not enabled for this server. Use `/toggle` to enable it.",
                 ephemeral=True
             )
             return
@@ -160,7 +203,7 @@ class ConfigCommands(commands.Cog):
         
         if not tag_to_watch or not role_ids:
             await interaction.followup.send(
-                "❌ Configuration incomplète. Veuillez reconfigurer avec `/config`.",
+                "❌ Incomplete configuration. Please reconfigure with `/config`.",
                 ephemeral=True
             )
             return
@@ -169,7 +212,7 @@ class ConfigCommands(commands.Cog):
         tag_monitor = self.bot.get_cog('TagMonitor')
         if not tag_monitor:
             await interaction.followup.send(
-                "❌ Module de surveillance non chargé.",
+                "❌ Monitoring module not loaded.",
                 ephemeral=True
             )
             return
@@ -198,9 +241,9 @@ class ConfigCommands(commands.Cog):
                 members_updated += 1
         
         embed = discord.Embed(
-            title="✅ Scan terminé",
+            title="✅ Scan completed",
             color=discord.Color.green(),
-            description=f"**{total_members}** membres scannés\n**{members_updated}** membres mis à jour"
+            description=f"**{total_members}** members scanned\n**{members_updated}** members updated"
         )
         
         await interaction.followup.send(embed=embed, ephemeral=True)
