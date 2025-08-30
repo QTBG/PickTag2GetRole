@@ -59,6 +59,13 @@ class TagMonitor(commands.Cog):
             if isinstance(member.activity, discord.CustomActivity) and member.activity.name:
                 if tag.lower() in member.activity.name.lower():
                     return True
+        
+        # Vérifier le tag de serveur (primary guild)
+        if hasattr(member, 'primary_guild') and member.primary_guild:
+            # primary_guild est un objet PrimaryGuild qui a un attribut 'tag'
+            if hasattr(member.primary_guild, 'tag') and member.primary_guild.tag:
+                if tag.lower() in member.primary_guild.tag.lower():
+                    return True
             
         return False
     
