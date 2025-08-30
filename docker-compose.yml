@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  discord-tag-bot:
+  picktag2getrole:
     build: .
-    container_name: discord-tag-bot
+    container_name: picktag2getrole
     restart: unless-stopped
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
