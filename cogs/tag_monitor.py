@@ -224,11 +224,11 @@ class TagMonitor(commands.Cog):
             
             # Comparaison exacte du tag (insensible à la casse)
             if pg.tag.lower() == tag.lower():
-                logger.info(f"✅ {member.name} has matching tag: {pg.tag}")
+                logger.debug(f"✅ {member.name} has matching tag: {pg.tag}")
                 return True
             # Si le tag configuré contient un #, essayer une correspondance partielle
             elif '#' in tag and tag.lower() in pg.tag.lower():
-                logger.info(f"✅ {member.name} has partial matching tag: {pg.tag} (looking for {tag})")
+                logger.debug(f"✅ {member.name} has partial matching tag: {pg.tag} (looking for {tag})")
                 return True
             else:
                 logger.debug(f"{member.name} has different tag: '{pg.tag}' (looking for '{tag}')")
