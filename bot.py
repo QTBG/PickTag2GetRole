@@ -17,7 +17,7 @@ intents.members = True
 intents.guild_messages = False  # Désactiver les messages pour économiser des ressources
 intents.message_content = False
 
-class ServerTagBot(commands.Bot):
+class PickTag2GetRole(commands.Bot):
     def __init__(self):
         super().__init__(
             command_prefix='!',  # Prefix non utilisé mais requis
@@ -69,7 +69,7 @@ class ServerTagBot(commands.Bot):
         await self.save_configs()
 
 # Créer et lancer le bot
-bot = ServerTagBot()
+bot = PickTag2GetRole()
 
 @bot.event
 async def on_ready():

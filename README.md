@@ -1,4 +1,4 @@
-# Discord Tag Monitor Bot
+# PickTag2GetRole
 
 Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer automatiquement des rôles aux utilisateurs. Conçu pour fonctionner sur des VPS très légers avec un seul cœur CPU.
 
@@ -27,7 +27,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 1. **Cloner le projet**
    ```bash
    git clone <votre-repo>
-   cd discord-tag-bot
+   cd picktag2getrole
    ```
 
 2. **Configurer le bot**
@@ -110,22 +110,22 @@ Le bot est optimisé pour :
 
 ### Build manuel
 ```bash
-docker build -t discord-tag-bot .
+docker build -t picktag2getrole .
 ```
 
 ### Lancer sans docker-compose
 ```bash
 docker run -d \
-  --name discord-tag-bot \
+  --name picktag2getrole \
   --restart unless-stopped \
   -e DISCORD_TOKEN=votre_token \
   -v $(pwd)/server_configs.json:/app/server_configs.json \
-  discord-tag-bot
+  picktag2getrole
 ```
 
 ### Voir les logs
 ```bash
-docker logs discord-tag-bot
+docker logs picktag2getrole
 ```
 
 ## 🔑 Obtenir le token du bot
