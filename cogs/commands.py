@@ -226,14 +226,21 @@ class ConfigCommands(commands.Cog):
         total_members = 0
         members_with_tag = 0
         
+        # Vérifier le niveau de log actuel
+        current_level = logging.getLogger('PickTag2GetRole.TagMonitor').level
+        logger.debug(f"Current TagMonitor log level: {logging.getLevelName(current_level)}")
+        
         # Configurer le niveau de log temporairement si debug est activé
         if debug:
             # Sauvegarder le niveau actuel
-            original_level = logging.getLogger('PickTag2GetRole.TagMonitor').level
+            original_level = current_level
             logging.getLogger('PickTag2GetRole.TagMonitor').setLevel(logging.DEBUG)
             logger.info(f"Starting scan with debug mode enabled for tag: {tag_to_watch}")
         else:
             logger.info(f"Starting scan for tag: {tag_to_watch}")
+            # Si on n'est pas en mode debug mais que LOG_LEVEL=DEBUG, on veut quand même les logs
+            if current_level == logging.DEBUG:
+                logger.debug("Running in normal mode but DEBUG logging is enabled globally")
         
         async for member in interaction.guild.fetch_members(limit=None):
             total_members += 1

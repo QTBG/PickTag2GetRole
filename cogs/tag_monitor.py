@@ -50,36 +50,51 @@ class TagMonitor(commands.Cog):
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
         try:
-            # Accéder à primary_guild via l'attribut User
-            if hasattr(member, 'primary_guild') and member.primary_guild is not None:
-                pg = member.primary_guild
-                logger.debug(f"Checking {member.name} - Primary Guild: ID={pg.id}, Tag={pg.tag}, Identity enabled={pg.identity_enabled}")
+            logger.debug(f"Checking member: {member.name} (ID: {member.id})")
+            
+            # Vérifier si l'attribut primary_guild existe
+            if not hasattr(member, 'primary_guild'):
+                logger.debug(f"{member.name} - No primary_guild attribute found")
+                return False
+            
+            # Accéder à primary_guild
+            pg = member.primary_guild
+            if pg is None:
+                logger.debug(f"{member.name} - primary_guild is None")
+                return False
                 
-                # Vérifier si l'identité est activée (publiquement affichée)
-                if pg.identity_enabled == False:
-                    logger.debug(f"{member.name} has identity_enabled=False, skipping")
-                    return False
+            logger.debug(f"{member.name} - Primary Guild found: ID={pg.id}, Tag={pg.tag}, Identity enabled={pg.identity_enabled}")
+            
+            # Vérifier si l'identité est activée (publiquement affichée)
+            if pg.identity_enabled == False:
+                logger.debug(f"{member.name} has identity_enabled=False, skipping")
+                return False
+            
+            # Vérifier si le tag existe
+            if not pg.tag:
+                logger.debug(f"{member.name} has no tag set (tag is None or empty)")
+                return False
                 
-                # Vérifier si le tag existe et correspond
-                if pg.tag:
-                    # Comparaison exacte du tag (insensible à la casse)
-                    if pg.tag.lower() == tag.lower():
-                        logger.info(f"✅ {member.name} has matching tag: {pg.tag}")
-                        return True
-                    # Si le tag configuré contient un #, essayer une correspondance partielle
-                    elif '#' in tag and tag.lower() in pg.tag.lower():
-                        logger.info(f"✅ {member.name} has partial matching tag: {pg.tag} (looking for {tag})")
-                        return True
-                    else:
-                        logger.debug(f"{member.name} has different tag: {pg.tag} (looking for {tag})")
-                else:
-                    logger.debug(f"{member.name} has no tag set")
+            # Comparaison du tag
+            logger.debug(f"{member.name} - Comparing tags: member_tag='{pg.tag}' vs looking_for='{tag}'")
+            
+            # Comparaison exacte du tag (insensible à la casse)
+            if pg.tag.lower() == tag.lower():
+                logger.info(f"✅ {member.name} has matching tag: {pg.tag}")
+                return True
+            # Si le tag configuré contient un #, essayer une correspondance partielle
+            elif '#' in tag and tag.lower() in pg.tag.lower():
+                logger.info(f"✅ {member.name} has partial matching tag: {pg.tag} (looking for {tag})")
+                return True
             else:
-                logger.debug(f"{member.name} has no primary_guild set")
+                logger.debug(f"{member.name} has different tag: '{pg.tag}' (looking for '{tag}')")
             
         except AttributeError as e:
             # En cas d'erreur d'attribut, log pour debug
-            logger.error(f"Error accessing primary_guild for {member}: {e}")
+            logger.error(f"AttributeError accessing primary_guild for {member.name}: {e}")
+            logger.debug(f"Member attributes: {dir(member)}")
+        except Exception as e:
+            logger.error(f"Unexpected error checking tag for {member.name}: {type(e).__name__}: {e}")
             
         return False
     

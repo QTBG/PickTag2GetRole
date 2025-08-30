@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 from typing import Dict, List, Optional
 from database import DatabaseManager
 
-# Configuration du logging
+# Charger les variables d'environnement EN PREMIER
+load_dotenv()
+
+# Configuration du logging APRÈS le chargement des variables d'environnement
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
     level=getattr(logging, log_level, logging.INFO),
@@ -20,9 +23,8 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger('PickTag2GetRole')
-
-# Charger les variables d'environnement
-load_dotenv()
+logger.info(f"Logging level set to: {log_level}")
+logger.info(f"Discord.py version: {discord.__version__}")
 
 # Configuration optimisée pour un VPS léger
 intents = discord.Intents.default()
