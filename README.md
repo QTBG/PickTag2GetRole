@@ -90,12 +90,17 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
 
-### Fichier de configuration
+### Base de données
 
-Le bot sauvegarde automatiquement les configurations dans `server_configs.json`. Ce fichier contient :
+Le bot utilise une base de données SQLite (`bot_data.db`) pour stocker les configurations de manière sécurisée. Chaque serveur a ses propres données isolées :
 - Les tags surveillés par serveur
 - Les rôles à attribuer
 - L'état d'activation du bot
+
+**Sécurité & Confidentialité** :
+- Chaque serveur n'a accès qu'à ses propres données
+- Les données sont automatiquement supprimées quand le bot est retiré d'un serveur
+- Migration automatique depuis l'ancien format JSON si nécessaire
 
 ### Optimisations pour VPS léger
 
@@ -105,6 +110,21 @@ Le bot est optimisé pour :
 - Désactiver les intents Discord non nécessaires
 - Utiliser des événements plutôt que du polling constant
 - Traiter les membres par batch avec des pauses
+
+## 🔒 Sécurité et Confidentialité
+
+Le bot est conçu avec la sécurité et la confidentialité en priorité :
+
+### Protection des données
+- **Base de données SQLite** : Chaque serveur a ses données isolées
+- **Pas de partage entre serveurs** : Les configurations d'un serveur ne sont jamais accessibles par d'autres
+- **Suppression automatique** : Les données sont supprimées quand le bot quitte un serveur
+- **Données minimales** : Seuls les IDs nécessaires sont stockés (pas de messages, pas de données personnelles)
+
+### Architecture sécurisée
+- **Pas de fichier partagé** : Contrairement à un fichier JSON unique, la base de données isole les données
+- **Permissions Discord** : Le bot demande uniquement les permissions nécessaires
+- **Logs minimaux** : Aucune donnée sensible n'est loggée
 
 ## 🐳 Docker
 
@@ -119,7 +139,7 @@ docker run -d \
   --name picktag2getrole \
   --restart unless-stopped \
   -e DISCORD_TOKEN=votre_token \
-  -v $(pwd)/server_configs.json:/app/server_configs.json \
+  -v $(pwd)/bot_data.db:/app/bot_data.db \
   picktag2getrole
 ```
 

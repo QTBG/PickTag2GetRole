@@ -27,7 +27,7 @@ class TagMonitor(commands.Cog):
             return
             
         # Vérifier si le serveur a une configuration
-        config = self.bot.get_guild_config(after.guild.id)
+        config = self.bot.get_guild_config_cached(after.guild.id)
         if not config or not config.get('enabled', False):
             return
         
@@ -98,7 +98,7 @@ class TagMonitor(commands.Cog):
         self.processing = True
         try:
             for guild in self.bot.guilds:
-                config = self.bot.get_guild_config(guild.id)
+                config = self.bot.get_guild_config_cached(guild.id)
                 if not config or not config.get('enabled', False):
                     continue
                 
