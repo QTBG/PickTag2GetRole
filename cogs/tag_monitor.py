@@ -15,6 +15,22 @@ class TagMonitor(commands.Cog):
         
     async def cog_load(self):
         """Démarrer la surveillance après le chargement du cog"""
+        # Vérifier la version de discord.py et le support de primary_guild
+        logger.info(f"Discord.py version: {discord.__version__}")
+        
+        # Tester si primary_guild est supporté
+        test_member = None
+        for guild in self.bot.guilds:
+            if guild.members:
+                test_member = guild.members[0]
+                break
+        
+        if test_member:
+            has_primary_guild = hasattr(test_member, 'primary_guild')
+            logger.info(f"Primary guild support: {has_primary_guild}")
+            if has_primary_guild:
+                logger.info("Primary guild attribute is available")
+        
         # Attendre un peu pour s'assurer que tout est chargé
         await asyncio.sleep(2)
         self.check_tags.start()
@@ -45,7 +61,78 @@ class TagMonitor(commands.Cog):
         after_has_tag = self._member_has_tag(after, tag_to_watch)
         
         if before_has_tag != after_has_tag:
+            logger.info(f"Tag change detected for {after.name}: {before_has_tag} -> {after_has_tag}")
             await self._update_member_roles(after, after_has_tag, role_ids)
+    
+    @commands.Cog.listener()
+    async def on_presence_update(self, before: discord.Member, after: discord.Member):
+        """Événement déclenché lors de la mise à jour de la présence (inclut primary_guild)"""
+        if self.processing:
+            return
+            
+        # Vérifier si le serveur a une configuration
+        config = self.bot.get_guild_config_cached(after.guild.id)
+        if not config or not config.get('enabled', False):
+            return
+        
+        tag_to_watch = config.get('tag_to_watch')
+        role_ids = config.get('role_ids', [])
+        
+        if not tag_to_watch or not role_ids:
+            return
+        
+        # Comparer les primary guilds
+        before_pg = getattr(before, 'primary_guild', None)
+        after_pg = getattr(after, 'primary_guild', None)
+        
+        # Logger les changements pour debug
+        if before_pg != after_pg:
+            logger.debug(f"Primary guild change detected for {after.name}")
+            if before_pg:
+                logger.debug(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
+            else:
+                logger.debug(f"  Before: None")
+            if after_pg:
+                logger.debug(f"  After: ID={after_pg.id}, Tag={after_pg.tag}, Enabled={after_pg.identity_enabled}")
+            else:
+                logger.debug(f"  After: None")
+        
+        # Vérifier si le tag a changé
+        before_has_tag = self._member_has_tag(before, tag_to_watch)
+        after_has_tag = self._member_has_tag(after, tag_to_watch)
+        
+        if before_has_tag != after_has_tag:
+            logger.info(f"Tag change detected in presence update for {after.name}: {before_has_tag} -> {after_has_tag}")
+            await self._update_member_roles(after, after_has_tag, role_ids)
+    
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Événement déclenché quand un membre rejoint le serveur"""
+        # Vérifier si le serveur a une configuration
+        config = self.bot.get_guild_config_cached(member.guild.id)
+        if not config or not config.get('enabled', False):
+            return
+        
+        tag_to_watch = config.get('tag_to_watch')
+        role_ids = config.get('role_ids', [])
+        
+        if not tag_to_watch or not role_ids:
+            return
+        
+        # Vérifier si le nouveau membre a le tag
+        if self._member_has_tag(member, tag_to_watch):
+            logger.info(f"New member {member.name} joined with matching tag")
+            await self._update_member_roles(member, True, role_ids)
+    
+    async def _fetch_fresh_member(self, guild: discord.Guild, member_id: int) -> Optional[discord.Member]:
+        """Récupérer un membre avec des données fraîches depuis l'API"""
+        try:
+            return await guild.fetch_member(member_id)
+        except discord.NotFound:
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching member {member_id}: {e}")
+            return None
     
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
@@ -54,7 +141,7 @@ class TagMonitor(commands.Cog):
             
             # Vérifier si l'attribut primary_guild existe
             if not hasattr(member, 'primary_guild'):
-                logger.debug(f"{member.name} - No primary_guild attribute found")
+                logger.warning(f"{member.name} - No primary_guild attribute found. Discord.py version might be too old or member data is incomplete.")
                 return False
             
             # Accéder à primary_guild

@@ -177,6 +177,12 @@ class ConfigCommands(commands.Cog):
         )
         
         embed.add_field(
+            name="/check `@member`",
+            value="Check a specific member's tag status and see if they should have the configured roles.",
+            inline=False
+        )
+        
+        embed.add_field(
             name="/help",
             value="Show this help message.",
             inline=False
@@ -263,6 +269,64 @@ class ConfigCommands(commands.Cog):
         logger.info(f"Scan completed: {total_members} scanned, {members_with_tag} with tag, {members_updated} updated")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="check", description="Check a specific member's tag status")
+    @app_commands.describe(member="The member to check")
+    @app_commands.default_permissions(manage_roles=True)
+    async def check_member(self, interaction: discord.Interaction, member: discord.Member):
+        """Check if a specific member has the configured tag"""
+        config = await self.bot.get_guild_config(interaction.guild.id)
+        
+        if not config:
+            await interaction.response.send_message(
+                "❌ No configuration found for this server.",
+                ephemeral=True
+            )
+            return
+        
+        tag_to_watch = config.get('tag_to_watch', 'Not configured')
+        
+        embed = discord.Embed(
+            title=f"🔍 Tag check for {member.name}",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(name="Looking for tag", value=tag_to_watch, inline=False)
+        
+        # Vérifier primary_guild
+        if hasattr(member, 'primary_guild'):
+            pg = member.primary_guild
+            if pg:
+                embed.add_field(name="Primary Guild ID", value=pg.id or "None", inline=True)
+                embed.add_field(name="Primary Guild Tag", value=pg.tag or "None", inline=True)
+                embed.add_field(name="Identity Enabled", value=str(pg.identity_enabled), inline=True)
+                
+                # Vérifier si le tag correspond
+                tag_monitor = self.bot.get_cog('TagMonitor')
+                if tag_monitor and tag_to_watch != 'Not configured':
+                    has_tag = tag_monitor._member_has_tag(member, tag_to_watch)
+                    embed.add_field(name="Has matching tag?", value="✅ Yes" if has_tag else "❌ No", inline=False)
+            else:
+                embed.add_field(name="Primary Guild", value="None", inline=False)
+        else:
+            embed.add_field(name="Error", value="Primary guild attribute not found. Check discord.py version.", inline=False)
+        
+        # Afficher les rôles actuels
+        role_ids = config.get('role_ids', [])
+        if role_ids:
+            assigned_roles = []
+            for role_id in role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role and role in member.roles:
+                    assigned_roles.append(role.name)
+            
+            embed.add_field(
+                name="Currently has configured roles",
+                value=", ".join(assigned_roles) if assigned_roles else "None",
+                inline=False
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ConfigCommands(bot))
