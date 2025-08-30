@@ -221,3 +221,9 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 ## 📄 Licence
 
 Ce projet est sous licence MIT.
+
+## 📜 Informations Légales
+
+- [Conditions d'utilisation (Terms of Service)](TERMS_OF_SERVICE.md)
+- [Politique de confidentialité (Privacy Policy)](PRIVACY_POLICY.md)
+- [Page légale complète](LEGAL.md)
