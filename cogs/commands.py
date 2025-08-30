@@ -71,7 +71,7 @@ class ConfigCommands(commands.Cog):
     @app_commands.default_permissions(manage_roles=True)
     async def status(self, interaction: discord.Interaction):
         """Display current configuration"""
-        config = self.bot.get_guild_config(interaction.guild.id)
+        config = await self.bot.get_guild_config(interaction.guild.id)
         
         if not config:
             await interaction.response.send_message(
@@ -121,7 +121,7 @@ class ConfigCommands(commands.Cog):
     @app_commands.default_permissions(manage_roles=True)
     async def toggle(self, interaction: discord.Interaction):
         """Enable/disable the bot for this server"""
-        config = self.bot.get_guild_config(interaction.guild.id)
+        config = await self.bot.get_guild_config(interaction.guild.id)
         
         if not config:
             await interaction.response.send_message(
@@ -187,7 +187,7 @@ class ConfigCommands(commands.Cog):
     @app_commands.default_permissions(manage_roles=True)
     async def scan(self, interaction: discord.Interaction):
         """Force an immediate scan of all members"""
-        config = self.bot.get_guild_config(interaction.guild.id)
+        config = await self.bot.get_guild_config(interaction.guild.id)
         
         if not config or not config.get('enabled', False):
             await interaction.response.send_message(

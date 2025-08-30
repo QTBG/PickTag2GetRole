@@ -8,8 +8,8 @@ services:
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
     volumes:
-      # Monter le fichier de configuration pour la persistance
-      - ./server_configs.json:/app/server_configs.json
+      # Monter la base de données pour la persistance
+      - ./bot_data.db:/app/bot_data.db
       - ./.env:/app/.env:ro
     # Limiter les ressources pour un VPS léger
     deploy:

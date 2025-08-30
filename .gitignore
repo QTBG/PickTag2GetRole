@@ -1,5 +1,8 @@
 .env
 server_configs.json
+server_configs.json.backup
+bot_data.db
+*.db-journal
 __pycache__/
 *.py[cod]
 *$py.class
