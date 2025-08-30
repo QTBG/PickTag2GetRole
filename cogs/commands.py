@@ -221,9 +221,14 @@ class ConfigCommands(commands.Cog):
         members_updated = 0
         total_members = 0
         
-        async for member in interaction.guild.fetch_members(limit=None):
+        # Utiliser guild.members pour avoir accès aux données en cache (incluant les activités)
+        for member in interaction.guild.members:
             total_members += 1
             has_tag = tag_monitor._member_has_tag(member, tag_to_watch)
+            
+            # Log de débogage
+            if has_tag:
+                print(f"[SCAN] {member.name} has tag '{tag_to_watch}' - display_name: {member.display_name}, activity: {member.activity}")
             
             # Vérifier si le membre doit avoir les rôles
             needs_update = False
@@ -237,6 +242,7 @@ class ConfigCommands(commands.Cog):
                         needs_update = True
             
             if needs_update:
+                print(f"[SCAN] Updating roles for {member.name} - has_tag: {has_tag}")
                 await tag_monitor._update_member_roles(member, has_tag, role_ids)
                 members_updated += 1
         

@@ -59,7 +59,10 @@ class TagMonitor(commands.Cog):
             if isinstance(member.activity, discord.CustomActivity) and member.activity.name:
                 if tag.lower() in member.activity.name.lower():
                     return True
-            
+        
+        # Log de débogage pour les membres sans tag
+        # print(f"[TAG_CHECK] {member.name} - display_name: {member.display_name}, activity: {getattr(member, 'activity', None)}, has_tag: False")
+        
         return False
     
     async def _update_member_roles(self, member: discord.Member, should_have_roles: bool, role_ids: List[int]):
