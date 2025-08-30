@@ -128,14 +128,6 @@ Le bot est conçu avec la sécurité et la confidentialité en priorité :
 
 ## 🐳 Docker
 
-### Première installation
-Avant de démarrer le bot pour la première fois, créez le dossier de données :
-```bash
-./init_data_dir.sh
-# ou manuellement :
-mkdir -p data
-```
-
 ### Build manuel
 ```bash
 docker build -t picktag2getrole .
