@@ -45,22 +45,8 @@ class TagMonitor(commands.Cog):
             await self._update_member_roles(after, after_has_tag, role_ids)
     
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
-        """Vérifier si un membre a le tag spécifié"""
-        # Vérifier dans le nom d'affichage (nickname ou username)
-        if member.display_name and tag.lower() in member.display_name.lower():
-            return True
-            
-        # Vérifier aussi dans le nom d'utilisateur global
-        if member.name and tag.lower() in member.name.lower():
-            return True
-            
-        # Vérifier dans le statut personnalisé si disponible
-        if hasattr(member, 'activity') and member.activity:
-            if isinstance(member.activity, discord.CustomActivity) and member.activity.name:
-                if tag.lower() in member.activity.name.lower():
-                    return True
-        
-        # Vérifier le tag de serveur (primary guild)
+        """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
+        # Vérifier uniquement le tag de serveur (primary guild)
         if hasattr(member, 'primary_guild') and member.primary_guild:
             # Vérifier si le tag configuré est contenu dans le tag du serveur principal
             if member.primary_guild.tag and tag.lower() in member.primary_guild.tag.lower():
