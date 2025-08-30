@@ -14,6 +14,7 @@
 - Automatically assign or remove the configured roles based on tag presence
 - Store your configuration settings in a local SQLite database
 - Respond to tag changes in real-time using Discord events
+- Perform a verification at startup and once daily as backup
 
 ## We Do NOT
 - Read or store message content
