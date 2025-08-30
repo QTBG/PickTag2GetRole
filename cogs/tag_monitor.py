@@ -1,6 +1,6 @@
 from __future__ import annotations
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import asyncio
 from typing import Set, Optional, List
 import logging
@@ -33,11 +33,11 @@ class TagMonitor(commands.Cog):
         
         # Attendre un peu pour s'assurer que tout est chargé
         await asyncio.sleep(2)
-        self.check_tags.start()
+        # Tâche périodique désactivée pour économiser les ressources
         
     async def cog_unload(self):
         """Arrêter la surveillance lors du déchargement"""
-        self.check_tags.cancel()
+        pass  # Tâche périodique désactivée
     
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -271,53 +271,57 @@ class TagMonitor(commands.Cog):
             except discord.HTTPException as e:
                 logger.error(f"Error adding roles to {member}: {e}")
     
-    @tasks.loop(minutes=30)  # Vérification toutes les 30 minutes (backup seulement)
-    async def check_tags(self):
-        """Tâche périodique pour vérifier les tags (backup au cas où les événements sont manqués)"""
-        if self.processing:
-            return
-            
-        self.processing = True
-        try:
-            for guild in self.bot.guilds:
-                config = self.bot.get_guild_config_cached(guild.id)
-                if not config or not config.get('enabled', False):
-                    continue
-                
-                tag_to_watch = config.get('tag_to_watch')
-                role_ids = config.get('role_ids', [])
-                
-                if not tag_to_watch or not role_ids:
-                    continue
-                
-                # Traiter par batch pour économiser les ressources
-                current_members_with_tag = set()
-                
-                # Utiliser chunk_guild pour charger les membres progressivement
-                async for member in guild.fetch_members(limit=None):
-                    if self._member_has_tag(member, tag_to_watch):
-                        current_members_with_tag.add(member.id)
-                        await self._update_member_roles(member, True, role_ids)
-                    else:
-                        # Vérifier si le membre avait le tag avant
-                        if guild.id in self.member_cache and member.id in self.member_cache[guild.id]:
-                            await self._update_member_roles(member, False, role_ids)
-                    
-                    # Petite pause pour ne pas surcharger
-                    await asyncio.sleep(0.1)
-                
-                # Mettre à jour le cache
-                self.member_cache[guild.id] = current_members_with_tag
-                
-        except Exception as e:
-            logger.error(f"Error in check_tags: {e}")
-        finally:
-            self.processing = False
+    # Tâche périodique désactivée pour économiser les ressources du VPS
+    # Le bot fonctionne uniquement avec les événements Discord en temps réel
+    # (on_member_update, on_presence_update, on_user_update)
     
-    @check_tags.before_loop
-    async def before_check_tags(self):
-        """Attendre que le bot soit prêt avant de démarrer la tâche"""
-        await self.bot.wait_until_ready()
+    # @tasks.loop(minutes=30)  # Vérification toutes les 30 minutes (backup seulement)
+    # async def check_tags(self):
+    #     """Tâche périodique pour vérifier les tags (backup au cas où les événements sont manqués)"""
+    #     if self.processing:
+    #         return
+    #         
+    #     self.processing = True
+    #     try:
+    #         for guild in self.bot.guilds:
+    #             config = self.bot.get_guild_config_cached(guild.id)
+    #             if not config or not config.get('enabled', False):
+    #                 continue
+    #             
+    #             tag_to_watch = config.get('tag_to_watch')
+    #             role_ids = config.get('role_ids', [])
+    #             
+    #             if not tag_to_watch or not role_ids:
+    #                 continue
+    #             
+    #             # Traiter par batch pour économiser les ressources
+    #             current_members_with_tag = set()
+    #             
+    #             # Utiliser chunk_guild pour charger les membres progressivement
+    #             async for member in guild.fetch_members(limit=None):
+    #                 if self._member_has_tag(member, tag_to_watch):
+    #                     current_members_with_tag.add(member.id)
+    #                     await self._update_member_roles(member, True, role_ids)
+    #                 else:
+    #                     # Vérifier si le membre avait le tag avant
+    #                     if guild.id in self.member_cache and member.id in self.member_cache[guild.id]:
+    #                         await self._update_member_roles(member, False, role_ids)
+    #                 
+    #                 # Petite pause pour ne pas surcharger
+    #                 await asyncio.sleep(0.1)
+    #             
+    #             # Mettre à jour le cache
+    #             self.member_cache[guild.id] = current_members_with_tag
+    #             
+    #     except Exception as e:
+    #         logger.error(f"Error in check_tags: {e}")
+    #     finally:
+    #         self.processing = False
+    # 
+    # @check_tags.before_loop
+    # async def before_check_tags(self):
+    #     """Attendre que le bot soit prêt avant de démarrer la tâche"""
+    #     await self.bot.wait_until_ready()
 
 async def setup(bot):
     await bot.add_cog(TagMonitor(bot))

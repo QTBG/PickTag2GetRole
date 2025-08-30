@@ -13,7 +13,7 @@
 - Monitor if users have the configured server tag in their profile
 - Automatically assign or remove the configured roles based on tag presence
 - Store your configuration settings in a local SQLite database
-- Perform backup checks every 30 minutes (primarily uses real-time events)
+- Respond to tag changes in real-time using Discord events
 
 ## We Do NOT
 - Read or store message content

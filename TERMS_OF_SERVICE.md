@@ -23,8 +23,7 @@ The bot requires:
 ## 5. Limitations
 - Bot can only manage roles lower than its own role
 - Tag monitoring requires users to have their server identity publicly displayed
-- Bot responds to changes in real-time via Discord events
-- Backup verification runs every 30 minutes for reliability
+- Bot responds to changes in real-time via Discord events only
 
 ## 6. Data Handling
 See our [Privacy Policy](PRIVACY_POLICY.md) for detailed information.

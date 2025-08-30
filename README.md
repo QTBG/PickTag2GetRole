@@ -9,7 +9,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 - **Commandes slash intuitives** : Configuration facile via Discord
 - **Optimisé pour les ressources** : Conçu pour tourner sur des VPS avec 1 CPU et peu de RAM
 - **Événements en temps réel** : Utilise les événements Discord pour une réactivité maximale
-- **Sauvegarde périodique** : Vérification toutes les 5 minutes au cas où des événements seraient manqués
+- **100% événementiel** : Fonctionne uniquement avec les événements Discord en temps réel pour économiser les ressources
 
 ## 📋 Prérequis
 
@@ -196,7 +196,7 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 ## 📝 Notes importantes
 
 1. **Tags de serveur** : Les tags peuvent être dans le nom d'affichage ou les décorations d'avatar
-2. **Performance** : Le bot vérifie les événements en temps réel et fait une vérification complète toutes les 5 minutes
+2. **Performance** : Le bot réagit instantanément aux changements de tags via les événements Discord
 3. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
 
 ## 🐛 Dépannage
