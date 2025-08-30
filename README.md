@@ -92,7 +92,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 ### Base de données
 
-Le bot utilise une base de données SQLite (`bot_data.db`) pour stocker les configurations de manière sécurisée. Chaque serveur a ses propres données isolées :
+Le bot utilise une base de données SQLite (`data/bot_data.db`) pour stocker les configurations de manière sécurisée. Le fichier de base de données est stocké dans un dossier `data/` qui est créé automatiquement. Chaque serveur a ses propres données isolées :
 - Les tags surveillés par serveur
 - Les rôles à attribuer
 - L'état d'activation du bot
@@ -139,7 +139,7 @@ docker run -d \
   --name picktag2getrole \
   --restart unless-stopped \
   -e DISCORD_TOKEN=votre_token \
-  -v $(pwd)/bot_data.db:/app/bot_data.db \
+  -v $(pwd)/data:/app/data \
   picktag2getrole
 ```
 
