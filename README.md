@@ -224,6 +224,5 @@ Ce projet est sous licence MIT.
 
 ## 📜 Informations Légales
 
-- [Conditions d'utilisation (Terms of Service)](TERMS_OF_SERVICE.md)
-- [Politique de confidentialité (Privacy Policy)](PRIVACY_POLICY.md)
-- [Page légale complète](LEGAL.md)
+- [Terms of Service](TERMS_OF_SERVICE.md)
+- [Privacy Policy](PRIVACY_POLICY.md)
