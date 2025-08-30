@@ -100,7 +100,7 @@ Le bot utilise une base de données SQLite (`data/bot_data.db`) pour stocker les
 **Sécurité & Confidentialité** :
 - Chaque serveur n'a accès qu'à ses propres données
 - Les données sont automatiquement supprimées quand le bot est retiré d'un serveur
-- Migration automatique depuis l'ancien format JSON si nécessaire
+
 
 ### Optimisations pour VPS léger
 

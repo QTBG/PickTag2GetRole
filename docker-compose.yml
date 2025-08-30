@@ -9,7 +9,7 @@ services:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
     volumes:
       # Monter le dossier de données pour la persistance
-      - ./data:/app/data
+      - ./data:/app/data:rw
       - ./.env:/app/.env:ro
     # Limiter les ressources pour un VPS léger
     deploy:

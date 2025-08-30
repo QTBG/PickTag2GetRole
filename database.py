@@ -8,9 +8,9 @@ from contextlib import asynccontextmanager
 
 class DatabaseManager:
     def __init__(self, db_path: str = 'data/bot_data.db'):
-        # Ensure data directory exists
+        # Créer le répertoire data s'il n'existe pas
         data_dir = os.path.dirname(db_path)
-        if data_dir and not os.path.exists(data_dir):
+        if data_dir:
             os.makedirs(data_dir, exist_ok=True)
         
         self.db_path = db_path

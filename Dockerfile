@@ -3,23 +3,15 @@ FROM python:3.11-slim
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Créer un utilisateur non-root dès le début
-RUN useradd -m -u 1000 botuser
-
-# Copier les fichiers de requirements avec le bon propriétaire
-COPY --chown=botuser:botuser requirements.txt .
-
-# Installer les dépendances Python
+# Installer les dépendances Python d'abord (pour le cache Docker)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copier le reste de l'application avec le bon propriétaire
-COPY --chown=botuser:botuser . .
+# Copier le reste de l'application
+COPY . .
 
-# Créer le dossier data et définir les permissions
-RUN mkdir -p /app/data && chown -R botuser:botuser /app/data
-
-# Changer vers l'utilisateur non-root
-USER botuser
+# Créer le dossier data avec permissions ouvertes
+RUN mkdir -p /app/data && chmod -R 777 /app/data
 
 # Commande pour lancer le bot
 CMD ["python", "-u", "bot.py"]

@@ -1,10 +1,10 @@
 import discord
 from discord.ext import commands
 import os
-import json
+
 import asyncio
 from dotenv import load_dotenv
-import aiofiles
+
 from typing import Dict, List, Optional
 from database import DatabaseManager
 
@@ -33,7 +33,7 @@ class PickTag2GetRole(commands.Bot):
     async def setup_hook(self):
         """Initialiser le bot"""
         await self.db.initialize()
-        await self.migrate_from_json()  # Migrate old data if exists
+
         await self.load_configs_to_cache()
         await self.load_extension('cogs.tag_monitor')
         await self.load_extension('cogs.commands')
@@ -47,26 +47,7 @@ class PickTag2GetRole(commands.Bot):
             print(f"Error loading configs to cache: {e}")
             self.config_cache = {}
     
-    async def migrate_from_json(self):
-        """Migrate from old JSON file to database (one-time migration)"""
-        if os.path.exists('server_configs.json'):
-            try:
-                async with aiofiles.open('server_configs.json', 'r') as f:
-                    content = await f.read()
-                    old_configs = json.loads(content) if content else {}
-                    
-                # Migrate each server config
-                for guild_id_str, config in old_configs.items():
-                    guild_id = int(guild_id_str)
-                    await self.db.set_guild_config(guild_id, config)
-                    print(f"Migrated config for guild {guild_id}")
-                
-                # Rename old file to backup
-                os.rename('server_configs.json', 'server_configs.json.backup')
-                print("Migration complete! Old file backed up as server_configs.json.backup")
-            except Exception as e:
-                print(f"Error during migration: {e}")
-    
+
     async def refresh_cache(self, guild_id: int):
         """Refresh cache for a specific guild"""
         async with self.cache_lock:
