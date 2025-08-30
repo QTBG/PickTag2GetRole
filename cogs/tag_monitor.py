@@ -106,6 +106,63 @@ class TagMonitor(commands.Cog):
             await self._update_member_roles(after, after_has_tag, role_ids)
     
     @commands.Cog.listener()
+    async def on_user_update(self, before: discord.User, after: discord.User):
+        """Événement déclenché lors de la mise à jour d'un utilisateur (inclut primary_guild)"""
+        logger.debug(f"User update detected for {after.name}")
+        
+        # Vérifier les changements de primary_guild
+        before_pg = getattr(before, 'primary_guild', None)
+        after_pg = getattr(after, 'primary_guild', None)
+        
+        # Si le primary guild a changé
+        if before_pg != after_pg:
+            logger.info(f"Primary guild change detected via on_user_update for {after.name}")
+            if before_pg:
+                logger.info(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
+            else:
+                logger.info(f"  Before: None")
+            if after_pg:
+                logger.info(f"  After: ID={after_pg.id}, Tag={after_pg.tag}, Enabled={after_pg.identity_enabled}")
+            else:
+                logger.info(f"  After: None")
+            
+            # Traiter tous les serveurs où cet utilisateur est membre
+            for guild in self.bot.guilds:
+                # Vérifier si l'utilisateur est membre de ce serveur
+                member = guild.get_member(after.id)
+                if not member:
+                    continue
+                
+                # Vérifier si le serveur a une configuration
+                config = self.bot.get_guild_config_cached(guild.id)
+                if not config or not config.get('enabled', False):
+                    continue
+                
+                tag_to_watch = config.get('tag_to_watch')
+                role_ids = config.get('role_ids', [])
+                
+                if not tag_to_watch or not role_ids:
+                    continue
+                
+                # Vérifier si le tag correspond maintenant
+                has_tag = self._member_has_tag(member, tag_to_watch)
+                
+                # Pour vérifier le tag avant, on doit créer un "faux" membre avec les données de before
+                # car on ne peut pas obtenir l'ancien membre depuis le cache
+                before_has_tag = False
+                if before_pg and before_pg.tag and before_pg.identity_enabled != False:
+                    # Comparaison directe des tags
+                    if before_pg.tag.lower() == tag_to_watch.lower():
+                        before_has_tag = True
+                    elif '#' in tag_to_watch and tag_to_watch.lower() in before_pg.tag.lower():
+                        before_has_tag = True
+                
+                # Si le statut du tag a changé, mettre à jour les rôles
+                if before_has_tag != has_tag:
+                    logger.info(f"Tag change detected for {member.name} in {guild.name}: {before_has_tag} -> {has_tag}")
+                    await self._update_member_roles(member, has_tag, role_ids)
+    
+    @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         """Événement déclenché quand un membre rejoint le serveur"""
         # Vérifier si le serveur a une configuration
@@ -214,7 +271,7 @@ class TagMonitor(commands.Cog):
             except discord.HTTPException as e:
                 logger.error(f"Error adding roles to {member}: {e}")
     
-    @tasks.loop(minutes=5)  # Vérification toutes les 5 minutes pour économiser les ressources
+    @tasks.loop(minutes=30)  # Vérification toutes les 30 minutes (backup seulement)
     async def check_tags(self):
         """Tâche périodique pour vérifier les tags (backup au cas où les événements sont manqués)"""
         if self.processing:
