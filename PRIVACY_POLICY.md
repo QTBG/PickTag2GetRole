@@ -1,6 +1,6 @@
 # Privacy Policy - PickTag2GetRole Bot
 
-*Last updated: January 2025*
+*Last updated: August 2025*
 
 ## What We Collect
 - **Server Information**: Discord server ID where the bot is installed
@@ -13,7 +13,7 @@
 - Monitor if users have the configured server tag in their profile
 - Automatically assign or remove the configured roles based on tag presence
 - Store your configuration settings in a local SQLite database
-- Perform periodic checks every 5 minutes to ensure accuracy
+- Perform backup checks every 30 minutes (primarily uses real-time events)
 
 ## We Do NOT
 - Read or store message content

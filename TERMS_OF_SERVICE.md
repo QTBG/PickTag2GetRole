@@ -1,6 +1,6 @@
 # Terms of Service - PickTag2GetRole Bot
 
-*Last updated: January 2025*
+*Last updated: August 2025*
 
 ## 1. Acceptance
 By adding PickTag2GetRole to your Discord server, you agree to these terms.
@@ -23,7 +23,8 @@ The bot requires:
 ## 5. Limitations
 - Bot can only manage roles lower than its own role
 - Tag monitoring requires users to have their server identity publicly displayed
-- Bot checks tags every 5 minutes and on member updates
+- Bot responds to changes in real-time via Discord events
+- Backup verification runs every 30 minutes for reliability
 
 ## 6. Data Handling
 See our [Privacy Policy](PRIVACY_POLICY.md) for detailed information.
