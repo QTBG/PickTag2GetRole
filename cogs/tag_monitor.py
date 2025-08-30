@@ -33,11 +33,17 @@ class TagMonitor(commands.Cog):
         
         # Attendre un peu pour s'assurer que tout est chargé
         await asyncio.sleep(2)
-        self.check_tags.start()
+        
+        # Faire une vérification initiale au démarrage
+        logger.info("Running initial tag check on startup...")
+        await self.check_all_tags()
+        
+        # Démarrer la vérification quotidienne
+        self.daily_check.start()
         
     async def cog_unload(self):
         """Arrêter la surveillance lors du déchargement"""
-        self.check_tags.cancel()
+        self.daily_check.cancel()
     
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -271,9 +277,8 @@ class TagMonitor(commands.Cog):
             except discord.HTTPException as e:
                 logger.error(f"Error adding roles to {member}: {e}")
     
-    @tasks.loop(minutes=30)  # Vérification toutes les 30 minutes (backup seulement)
-    async def check_tags(self):
-        """Tâche périodique pour vérifier les tags (backup au cas où les événements sont manqués)"""
+    async def check_all_tags(self):
+        """Vérifier tous les tags pour tous les serveurs (utilisé au démarrage et quotidiennement)"""
         if self.processing:
             return
             
@@ -290,8 +295,11 @@ class TagMonitor(commands.Cog):
                 if not tag_to_watch or not role_ids:
                     continue
                 
+                logger.info(f"Checking tags for guild {guild.name} ({guild.id})")
+                
                 # Traiter par batch pour économiser les ressources
                 current_members_with_tag = set()
+                checked_count = 0
                 
                 # Utiliser chunk_guild pour charger les membres progressivement
                 async for member in guild.fetch_members(limit=None):
@@ -303,19 +311,29 @@ class TagMonitor(commands.Cog):
                         if guild.id in self.member_cache and member.id in self.member_cache[guild.id]:
                             await self._update_member_roles(member, False, role_ids)
                     
-                    # Petite pause pour ne pas surcharger
-                    await asyncio.sleep(0.1)
+                    checked_count += 1
+                    # Petite pause toutes les 10 vérifications pour ne pas surcharger
+                    if checked_count % 10 == 0:
+                        await asyncio.sleep(0.1)
                 
                 # Mettre à jour le cache
                 self.member_cache[guild.id] = current_members_with_tag
+                logger.info(f"Checked {checked_count} members in {guild.name}, {len(current_members_with_tag)} have the tag")
                 
         except Exception as e:
-            logger.error(f"Error in check_tags: {e}")
+            logger.error(f"Error in check_all_tags: {e}")
         finally:
             self.processing = False
     
-    @check_tags.before_loop
-    async def before_check_tags(self):
+    @tasks.loop(hours=24)  # Vérification une fois par jour
+    async def daily_check(self):
+        """Tâche quotidienne pour vérifier les tags"""
+        logger.info("Starting daily tag verification...")
+        await self.check_all_tags()
+        logger.info("Daily tag verification completed")
+    
+    @daily_check.before_loop
+    async def before_daily_check(self):
         """Attendre que le bot soit prêt avant de démarrer la tâche"""
         await self.bot.wait_until_ready()
 
