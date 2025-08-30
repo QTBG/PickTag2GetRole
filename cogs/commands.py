@@ -184,8 +184,9 @@ class ConfigCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="scan", description="Manually scan all members now")
+    @app_commands.describe(debug="Show detailed information about each member scanned")
     @app_commands.default_permissions(manage_roles=True)
-    async def scan(self, interaction: discord.Interaction):
+    async def scan(self, interaction: discord.Interaction, debug: bool = False):
         """Force an immediate scan of all members"""
         config = await self.bot.get_guild_config(interaction.guild.id)
         
@@ -220,10 +221,24 @@ class ConfigCommands(commands.Cog):
         # Scanner tous les membres
         members_updated = 0
         total_members = 0
+        members_with_tag = 0
+        debug_info = []
         
         async for member in interaction.guild.fetch_members(limit=None):
             total_members += 1
             has_tag = tag_monitor._member_has_tag(member, tag_to_watch)
+            
+            if has_tag:
+                members_with_tag += 1
+            
+            # Collecter les informations de debug si demandé
+            if debug and total_members <= 20:  # Limiter à 20 pour éviter un message trop long
+                primary_guild_info = "No primary guild"
+                if hasattr(member, 'primary_guild') and member.primary_guild:
+                    pg = member.primary_guild
+                    primary_guild_info = f"Tag: {pg.tag or 'None'}, ID: {pg.id or 'None'}, Identity enabled: {pg.identity_enabled}"
+                
+                debug_info.append(f"{member.name}: {primary_guild_info} - Has tag: {has_tag}")
             
             # Vérifier si le membre doit avoir les rôles
             needs_update = False
@@ -243,8 +258,21 @@ class ConfigCommands(commands.Cog):
         embed = discord.Embed(
             title="✅ Scan completed",
             color=discord.Color.green(),
-            description=f"**{total_members}** members scanned\n**{members_updated}** members updated"
+            description=f"**{total_members}** members scanned\n**{members_with_tag}** members with tag '{tag_to_watch}'\n**{members_updated}** members updated"
         )
+        
+        if debug and debug_info:
+            embed.add_field(
+                name="Debug Information (first 20 members)",
+                value="\n".join(debug_info[:10]) if len(debug_info) > 10 else "\n".join(debug_info),
+                inline=False
+            )
+            if len(debug_info) > 10:
+                embed.add_field(
+                    name="Debug Information (continued)",
+                    value="\n".join(debug_info[10:20]),
+                    inline=False
+                )
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 

@@ -15,6 +15,7 @@ load_dotenv()
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
+intents.presences = True  # Nécessaire pour accéder à primary_guild
 intents.guild_messages = False  # Désactiver les messages pour économiser des ressources
 intents.message_content = False
 

@@ -46,11 +46,25 @@ class TagMonitor(commands.Cog):
     
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
-        # Vérifier uniquement le tag de serveur (primary guild)
-        if hasattr(member, 'primary_guild') and member.primary_guild:
-            # Vérifier si le tag configuré est contenu dans le tag du serveur principal
-            if member.primary_guild.tag and tag.lower() in member.primary_guild.tag.lower():
-                return True
+        try:
+            # Accéder à primary_guild via l'attribut User
+            if hasattr(member, 'primary_guild') and member.primary_guild is not None:
+                # Vérifier si l'identité est activée (publiquement affichée)
+                if member.primary_guild.identity_enabled == False:
+                    return False
+                
+                # Vérifier si le tag existe et correspond
+                if member.primary_guild.tag:
+                    # Comparaison exacte du tag (insensible à la casse)
+                    if member.primary_guild.tag.lower() == tag.lower():
+                        return True
+                    # Si le tag configuré contient un #, essayer une correspondance partielle
+                    elif '#' in tag and tag.lower() in member.primary_guild.tag.lower():
+                        return True
+            
+        except AttributeError as e:
+            # En cas d'erreur d'attribut, log pour debug
+            print(f"Erreur lors de l'accès à primary_guild pour {member}: {e}")
             
         return False
     
