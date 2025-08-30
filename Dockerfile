@@ -15,11 +15,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier le reste de l'application avec le bon propriétaire
 COPY --chown=botuser:botuser . .
 
-# Créer le dossier data et définir les permissions
+# Rendre le script d'entrée exécutable
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Créer le dossier data dans le conteneur (sera écrasé par le volume monté)
+# mais au moins il existera si aucun volume n'est monté
 RUN mkdir -p /app/data && chown -R botuser:botuser /app/data
 
 # Changer vers l'utilisateur non-root
 USER botuser
 
-# Commande pour lancer le bot
-CMD ["python", "-u", "bot.py"]
+# Point d'entrée
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# Commande par défaut (peut être surchargée)
+CMD []

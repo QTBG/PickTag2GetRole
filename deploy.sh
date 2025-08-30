@@ -4,6 +4,19 @@
 echo "📦 Mise à jour du code..."
 git pull
 
+# Préparer l'environnement si nécessaire
+if [ ! -d "./data" ]; then
+    echo "🔧 Préparation de l'environnement..."
+    ./setup-host.sh
+else
+    # Vérifier quand même les permissions
+    if [ ! -w "./data" ]; then
+        echo "⚠️  Réparation des permissions du répertoire data..."
+        sudo chown -R 1000:1000 ./data
+        sudo chmod -R 755 ./data
+    fi
+fi
+
 echo "🛑 Arrêt du conteneur..."
 docker-compose down
 
