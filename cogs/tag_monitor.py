@@ -116,15 +116,15 @@ class TagMonitor(commands.Cog):
         
         # Si le primary guild a changé
         if before_pg != after_pg:
-            logger.info(f"Primary guild change detected via on_user_update for {after.name}")
+            logger.debug(f"Primary guild change detected via on_user_update for {after.name}")
             if before_pg:
-                logger.info(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
+                logger.debug(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
             else:
-                logger.info(f"  Before: None")
+                logger.debug(f"  Before: None")
             if after_pg:
-                logger.info(f"  After: ID={after_pg.id}, Tag={after_pg.tag}, Enabled={after_pg.identity_enabled}")
+                logger.debug(f"  After: ID={after_pg.id}, Tag={after_pg.tag}, Enabled={after_pg.identity_enabled}")
             else:
-                logger.info(f"  After: None")
+                logger.debug(f"  After: None")
             
             # Traiter tous les serveurs où cet utilisateur est membre
             for guild in self.bot.guilds:
@@ -259,7 +259,7 @@ class TagMonitor(commands.Cog):
                 # Pour retirer, on doit modifier la liste des rôles
                 try:
                     await member.remove_roles(role, reason="Tag de serveur retiré")
-                    logger.info(f"Removed role {role.name} from {member.name}")
+                    logger.debug(f"Removed role {role.name} from {member.name}")
                 except discord.HTTPException as e:
                     logger.error(f"Error removing role {role.name} from {member}: {e}")
         
@@ -267,7 +267,7 @@ class TagMonitor(commands.Cog):
         if should_have_roles and roles_to_update:
             try:
                 await member.add_roles(*roles_to_update, reason="Tag de serveur détecté")
-                logger.info(f"Added roles {[r.name for r in roles_to_update]} to {member.name}")
+                logger.debug(f"Added roles {[r.name for r in roles_to_update]} to {member.name}")
             except discord.HTTPException as e:
                 logger.error(f"Error adding roles to {member}: {e}")
     
