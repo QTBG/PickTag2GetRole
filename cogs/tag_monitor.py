@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 import asyncio
-from typing import Set, Optional
+from typing import Set, Optional, List
 
 class TagMonitor(commands.Cog):
     def __init__(self, bot):
