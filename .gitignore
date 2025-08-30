@@ -1,0 +1,14 @@
+.env
+server_configs.json
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.vscode/
+.idea/
+*.log
+.DS_Store

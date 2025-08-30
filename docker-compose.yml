@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  discord-tag-bot:
+    build: .
+    container_name: discord-tag-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+    volumes:
+      # Monter le fichier de configuration pour la persistance
+      - ./server_configs.json:/app/server_configs.json
+      - ./.env:/app/.env:ro
+    # Limiter les ressources pour un VPS léger
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
