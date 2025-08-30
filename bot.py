@@ -38,6 +38,11 @@ class PickTag2GetRole(commands.Bot):
         
     async def load_configs(self):
         """Charger les configurations depuis le fichier"""
+        # Vérifier si c'est un répertoire et le supprimer si c'est le cas
+        if os.path.exists(self.config_file) and os.path.isdir(self.config_file):
+            print(f"Attention: {self.config_file} est un répertoire, suppression...")
+            os.rmdir(self.config_file)
+        
         try:
             async with aiofiles.open(self.config_file, 'r') as f:
                 content = await f.read()
@@ -45,7 +50,10 @@ class PickTag2GetRole(commands.Bot):
                 # Convertir les clés string en int
                 self.configs = {int(k): v for k, v in self.configs.items()}
         except FileNotFoundError:
+            # Créer le fichier s'il n'existe pas
             self.configs = {}
+            await self.save_configs()
+            print(f"Fichier {self.config_file} créé avec une configuration vide")
         except Exception as e:
             print(f"Erreur lors du chargement des configs: {e}")
             self.configs = {}

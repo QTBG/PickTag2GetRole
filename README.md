@@ -92,7 +92,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 ### Fichier de configuration
 
-Le bot sauvegarde automatiquement les configurations dans `server_configs.json`. Ce fichier contient :
+Le bot sauvegarde automatiquement les configurations dans `server_configs.json`. Ce fichier est créé automatiquement au premier démarrage s'il n'existe pas. Il contient :
 - Les tags surveillés par serveur
 - Les rôles à attribuer
 - L'état d'activation du bot
