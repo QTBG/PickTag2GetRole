@@ -26,8 +26,8 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 1. **Cloner le projet**
    ```bash
-   git clone <votre-repo>
-   cd picktag2getrole
+   git clone https://github.com/votre-username/PickTag2GetRole.git
+   cd PickTag2GetRole
    ```
 
 2. **Configurer le bot**
