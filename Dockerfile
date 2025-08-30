@@ -12,6 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier le reste de l'application
 COPY . .
 
+# Créer le dossier data avec les bonnes permissions
+RUN mkdir -p /app/data
+
 # Créer un utilisateur non-root pour la sécurité
 RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
 USER botuser
