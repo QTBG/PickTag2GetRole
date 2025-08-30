@@ -61,7 +61,7 @@ class TagMonitor(commands.Cog):
         after_has_tag = self._member_has_tag(after, tag_to_watch)
         
         if before_has_tag != after_has_tag:
-            logger.info(f"Tag change detected for {after.name}: {before_has_tag} -> {after_has_tag}")
+            logger.debug(f"Tag change detected for {after.name}: {before_has_tag} -> {after_has_tag}")
             await self._update_member_roles(after, after_has_tag, role_ids)
     
     @commands.Cog.listener()
@@ -102,7 +102,7 @@ class TagMonitor(commands.Cog):
         after_has_tag = self._member_has_tag(after, tag_to_watch)
         
         if before_has_tag != after_has_tag:
-            logger.info(f"Tag change detected in presence update for {after.name}: {before_has_tag} -> {after_has_tag}")
+            logger.debug(f"Tag change detected in presence update for {after.name}: {before_has_tag} -> {after_has_tag}")
             await self._update_member_roles(after, after_has_tag, role_ids)
     
     @commands.Cog.listener()
@@ -159,7 +159,7 @@ class TagMonitor(commands.Cog):
                 
                 # Si le statut du tag a changé, mettre à jour les rôles
                 if before_has_tag != has_tag:
-                    logger.info(f"Tag change detected for {member.name} in {guild.name}: {before_has_tag} -> {has_tag}")
+                    logger.debug(f"Tag change detected for {member.name} in {guild.name}: {before_has_tag} -> {has_tag}")
                     await self._update_member_roles(member, has_tag, role_ids)
     
     @commands.Cog.listener()
