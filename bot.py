@@ -27,7 +27,7 @@ logger.info(f"Logging level set to: {log_level}")
 logger.info(f"Discord.py version: {discord.__version__}")
 
 # Configuration optimisée pour un VPS léger
-intents = discord.Intents.default()
+intents = discord.Intents.all()
 intents.guilds = True
 intents.members = True
 intents.presences = True  # Nécessaire pour accéder à primary_guild
