@@ -40,10 +40,13 @@ class TagMonitor(commands.Cog):
         
         # Démarrer la vérification quotidienne
         self.daily_check.start()
+        # Démarrer le log des statistiques serveur
+        self.server_count_log.start()
         
     async def cog_unload(self):
         """Arrêter la surveillance lors du déchargement"""
         self.daily_check.cancel()
+        self.server_count_log.cancel()
     
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -335,6 +338,28 @@ class TagMonitor(commands.Cog):
     @daily_check.before_loop
     async def before_daily_check(self):
         """Attendre que le bot soit prêt avant de démarrer la tâche"""
+        await self.bot.wait_until_ready()
+    
+    @tasks.loop(hours=12)  # Log server count every 12 hours
+    async def server_count_log(self):
+        """Log server count and basic statistics"""
+        logger.info(f"=== Server Statistics ===")
+        logger.info(f"Total servers: {len(self.bot.guilds)}")
+        logger.info(f"Total members across all servers: {sum(guild.member_count for guild in self.bot.guilds)}")
+        
+        # Log enabled servers
+        enabled_count = len(self.bot.config_cache)
+        logger.info(f"Servers with bot enabled: {enabled_count}")
+        
+        # List all servers with their member count
+        for guild in sorted(self.bot.guilds, key=lambda g: g.member_count, reverse=True):
+            config = self.bot.get_guild_config_cached(guild.id)
+            enabled_status = "✓ Enabled" if config and config.get('enabled', False) else "✗ Disabled"
+            logger.info(f"  - {guild.name} ({guild.id}): {guild.member_count} members [{enabled_status}]")
+    
+    @server_count_log.before_loop
+    async def before_server_count_log(self):
+        """Wait for bot to be ready"""
         await self.bot.wait_until_ready()
 
 async def setup(bot):
