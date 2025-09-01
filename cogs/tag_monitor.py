@@ -40,10 +40,13 @@ class TagMonitor(commands.Cog):
         
         # Démarrer la vérification quotidienne
         self.daily_check.start()
+        # Démarrer le log des statistiques serveur
+        self.server_count_log.start()
         
     async def cog_unload(self):
         """Arrêter la surveillance lors du déchargement"""
         self.daily_check.cancel()
+        self.server_count_log.cancel()
     
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -295,7 +298,7 @@ class TagMonitor(commands.Cog):
                 if not tag_to_watch or not role_ids:
                     continue
                 
-                logger.info(f"Checking tags for guild {guild.name} ({guild.id})")
+                logger.info(f"Checking tags for guild {guild.id}")
                 
                 # Traiter par batch pour économiser les ressources
                 current_members_with_tag = set()
@@ -318,7 +321,7 @@ class TagMonitor(commands.Cog):
                 
                 # Mettre à jour le cache
                 self.member_cache[guild.id] = current_members_with_tag
-                logger.info(f"Checked {checked_count} members in {guild.name}, {len(current_members_with_tag)} have the tag")
+                logger.info(f"Checked {checked_count} members in guild {guild.id}, {len(current_members_with_tag)} have the tag")
                 
         except Exception as e:
             logger.error(f"Error in check_all_tags: {e}")
@@ -335,6 +338,17 @@ class TagMonitor(commands.Cog):
     @daily_check.before_loop
     async def before_daily_check(self):
         """Attendre que le bot soit prêt avant de démarrer la tâche"""
+        await self.bot.wait_until_ready()
+    
+    @tasks.loop(hours=12)  # Log server count every 12 hours
+    async def server_count_log(self):
+        """Log server count and basic statistics"""
+        enabled_count = len(self.bot.config_cache)
+        logger.info(f"Server Statistics: Total={len(self.bot.guilds)} | Enabled={enabled_count}")
+    
+    @server_count_log.before_loop
+    async def before_server_count_log(self):
+        """Wait for bot to be ready"""
         await self.bot.wait_until_ready()
 
 async def setup(bot):

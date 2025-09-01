@@ -90,10 +90,15 @@ class PickTag2GetRole(commands.Bot):
 bot = PickTag2GetRole()
 
 @bot.event
+async def on_guild_join(guild: discord.Guild):
+    """When bot joins a new server"""
+    logger.info(f"Bot joined server {guild.id} | Total servers: {len(bot.guilds)}")
+
+@bot.event
 async def on_guild_remove(guild: discord.Guild):
     """When bot is removed from a server, delete its data"""
     await bot.db.delete_guild_config(guild.id)
-    logger.info(f"Bot removed from {guild.name} ({guild.id}), data deleted")
+    logger.info(f"Bot removed from server {guild.id}, data deleted | Total servers: {len(bot.guilds)}")
 
 @bot.event
 async def on_ready():
