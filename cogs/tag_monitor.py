@@ -298,7 +298,7 @@ class TagMonitor(commands.Cog):
                 if not tag_to_watch or not role_ids:
                     continue
                 
-                logger.info(f"Checking tags for guild {guild.name} ({guild.id})")
+                logger.info(f"Checking tags for guild {guild.id}")
                 
                 # Traiter par batch pour économiser les ressources
                 current_members_with_tag = set()
@@ -321,7 +321,7 @@ class TagMonitor(commands.Cog):
                 
                 # Mettre à jour le cache
                 self.member_cache[guild.id] = current_members_with_tag
-                logger.info(f"Checked {checked_count} members in {guild.name}, {len(current_members_with_tag)} have the tag")
+                logger.info(f"Checked {checked_count} members in guild {guild.id}, {len(current_members_with_tag)} have the tag")
                 
         except Exception as e:
             logger.error(f"Error in check_all_tags: {e}")
@@ -343,19 +343,8 @@ class TagMonitor(commands.Cog):
     @tasks.loop(hours=12)  # Log server count every 12 hours
     async def server_count_log(self):
         """Log server count and basic statistics"""
-        logger.info(f"=== Server Statistics ===")
-        logger.info(f"Total servers: {len(self.bot.guilds)}")
-        logger.info(f"Total members across all servers: {sum(guild.member_count for guild in self.bot.guilds)}")
-        
-        # Log enabled servers
         enabled_count = len(self.bot.config_cache)
-        logger.info(f"Servers with bot enabled: {enabled_count}")
-        
-        # List all servers with their member count
-        for guild in sorted(self.bot.guilds, key=lambda g: g.member_count, reverse=True):
-            config = self.bot.get_guild_config_cached(guild.id)
-            enabled_status = "✓ Enabled" if config and config.get('enabled', False) else "✗ Disabled"
-            logger.info(f"  - {guild.name} ({guild.id}): {guild.member_count} members [{enabled_status}]")
+        logger.info(f"Server Statistics: Total={len(self.bot.guilds)} | Enabled={enabled_count}")
     
     @server_count_log.before_loop
     async def before_server_count_log(self):
