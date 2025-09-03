@@ -327,6 +327,37 @@ class ConfigCommands(commands.Cog):
             )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="sync", description="Synchronize bot commands (bot owner only)")
+    @app_commands.guild_only()
+    async def sync_commands(self, interaction: discord.Interaction):
+        """Synchronize slash commands - owner only"""
+        # Vérifier que c'est le propriétaire du bot
+        app_info = await self.bot.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.response.send_message(
+                "❌ Only the bot owner can use this command.",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Synchroniser globalement
+            synced = await self.bot.tree.sync()
+            await interaction.followup.send(
+                f"✅ Successfully synchronized {len(synced)} commands globally.\n"
+                "Note: It may take up to 1 hour for changes to appear in all servers.",
+                ephemeral=True
+            )
+            logger.info(f"Commands synced by {interaction.user}: {len(synced)} commands")
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Failed to sync commands: {str(e)}",
+                ephemeral=True
+            )
+            logger.error(f"Failed to sync commands: {e}")
 
 async def setup(bot):
     await bot.add_cog(ConfigCommands(bot))
