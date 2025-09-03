@@ -19,13 +19,8 @@ class ConfigCommands(commands.Cog):
     @app_commands.guild_only()
     async def config(self, interaction: discord.Interaction, tag: str, roles: str):
         """Configure the tag to monitor and roles to assign"""
-        # Vérifier les permissions (interaction.member est garanti dans un serveur)
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message(
-                "❌ You must have the Manage Roles permission to use this command.",
-                ephemeral=True
-            )
-            return
+        # Les permissions sont déjà vérifiées par @default_permissions
+        # Pas besoin de vérifier à nouveau
         
         # Parser les rôles mentionnés
         role_mentions = roles.split()

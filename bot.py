@@ -51,7 +51,6 @@ class PickTag2GetRole(commands.Bot):
         await self.db.initialize()
 
         await self.load_configs_to_cache()
-        await self.load_extension('cogs.error_handler')
         await self.load_extension('cogs.tag_monitor')
         await self.load_extension('cogs.commands')
         logger.info(f"Bot ready! Connected as {self.user}")
