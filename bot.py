@@ -60,25 +60,25 @@ class PickTag2GetRole(commands.Bot):
         logger.info(f"Bot ready! Connected as {self.user}")
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-        """Gestionnaire d'erreur minimal pour les commandes slash"""
+        """Minimal error handler for slash commands"""
         if isinstance(error, discord.app_commands.TransformerError):
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "❌ Cette commande ne peut être utilisée qu'dans un serveur, pas en DM.",
+                    "❌ This command can only be used in a server, not in DMs.",
                     ephemeral=True
                 )
         elif isinstance(error, discord.app_commands.CommandInvokeError):
             if "'User' object has no attribute 'guild_permissions'" in str(error):
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "❌ Cette commande ne peut être utilisée qu'dans un serveur, pas en DM.",
+                        "❌ This command can only be used in a server, not in DMs.",
                         ephemeral=True
                     )
             else:
                 logger.error(f"Command error: {error}")
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "❌ Une erreur s'est produite lors de l'exécution de la commande.",
+                        "❌ An error occurred while executing the command.",
                         ephemeral=True
                     )
         
