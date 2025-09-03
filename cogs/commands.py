@@ -16,15 +16,11 @@ class ConfigCommands(commands.Cog):
         roles="Roles to assign (mention roles separated by spaces)"
     )
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
     async def config(self, interaction: discord.Interaction, tag: str, roles: str):
         """Configure the tag to monitor and roles to assign"""
-        # Vérifier les permissions
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message(
-                "❌ You must have the Manage Roles permission to use this command.",
-                ephemeral=True
-            )
-            return
+        # Les permissions sont déjà vérifiées par @default_permissions
+        # Pas besoin de vérifier à nouveau
         
         # Parser les rôles mentionnés
         role_mentions = roles.split()
@@ -72,6 +68,7 @@ class ConfigCommands(commands.Cog):
     
     @app_commands.command(name="status", description="View the current bot configuration")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
     async def status(self, interaction: discord.Interaction):
         """Display current configuration"""
         config = await self.bot.get_guild_config(interaction.guild.id)
@@ -122,6 +119,7 @@ class ConfigCommands(commands.Cog):
     
     @app_commands.command(name="toggle", description="Enable or disable tag monitoring")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
     async def toggle(self, interaction: discord.Interaction):
         """Enable/disable the bot for this server"""
         config = await self.bot.get_guild_config(interaction.guild.id)
@@ -194,6 +192,7 @@ class ConfigCommands(commands.Cog):
     
     @app_commands.command(name="scan", description="Manually scan all members now")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
     async def scan(self, interaction: discord.Interaction):
         """Force an immediate scan of all members"""
         config = await self.bot.get_guild_config(interaction.guild.id)
@@ -273,6 +272,7 @@ class ConfigCommands(commands.Cog):
     @app_commands.command(name="check", description="Check a specific member's tag status")
     @app_commands.describe(member="The member to check")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
     async def check_member(self, interaction: discord.Interaction, member: discord.Member):
         """Check if a specific member has the configured tag"""
         config = await self.bot.get_guild_config(interaction.guild.id)

@@ -53,7 +53,34 @@ class PickTag2GetRole(commands.Bot):
         await self.load_configs_to_cache()
         await self.load_extension('cogs.tag_monitor')
         await self.load_extension('cogs.commands')
+        
+        # Gestionnaire d'erreur simple pour les commandes en DM
+        self.tree.on_error = self.on_app_command_error
+        
         logger.info(f"Bot ready! Connected as {self.user}")
+    
+    async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+        """Minimal error handler for slash commands"""
+        if isinstance(error, discord.app_commands.TransformerError):
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ This command can only be used in a server, not in DMs.",
+                    ephemeral=True
+                )
+        elif isinstance(error, discord.app_commands.CommandInvokeError):
+            if "'User' object has no attribute 'guild_permissions'" in str(error):
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ This command can only be used in a server, not in DMs.",
+                        ephemeral=True
+                    )
+            else:
+                logger.error(f"Command error: {error}")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ An error occurred while executing the command.",
+                        ephemeral=True
+                    )
         
     async def load_configs_to_cache(self):
         """Load all enabled configurations to cache for performance"""
