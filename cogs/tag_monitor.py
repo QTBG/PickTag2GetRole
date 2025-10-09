@@ -70,7 +70,7 @@ class TagMonitor(commands.Cog):
         after_has_tag = self._member_has_tag(after, tag_to_watch)
         
         if before_has_tag != after_has_tag:
-            logger.debug(f"Tag change detected for {after.name}: {before_has_tag} -> {after_has_tag}")
+            logger.debug(f"Tag change detected for member_id={after.id}: {before_has_tag} -> {after_has_tag}")
             await self._update_member_roles(after, after_has_tag, role_ids)
     
     @commands.Cog.listener()
@@ -96,7 +96,7 @@ class TagMonitor(commands.Cog):
         
         # Logger les changements pour debug
         if before_pg != after_pg:
-            logger.debug(f"Primary guild change detected for {after.name}")
+            logger.debug(f"Primary guild change detected for member_id={after.id}")
             if before_pg:
                 logger.debug(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
             else:
@@ -111,13 +111,13 @@ class TagMonitor(commands.Cog):
         after_has_tag = self._member_has_tag(after, tag_to_watch)
         
         if before_has_tag != after_has_tag:
-            logger.debug(f"Tag change detected in presence update for {after.name}: {before_has_tag} -> {after_has_tag}")
+            logger.debug(f"Tag change detected in presence update for member_id={after.id}: {before_has_tag} -> {after_has_tag}")
             await self._update_member_roles(after, after_has_tag, role_ids)
     
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
         """Événement déclenché lors de la mise à jour d'un utilisateur (inclut primary_guild)"""
-        logger.debug(f"User update detected for {after.name}")
+        logger.debug(f"User update detected for user_id={after.id}")
         
         # Vérifier les changements de primary_guild
         before_pg = getattr(before, 'primary_guild', None)
@@ -125,7 +125,7 @@ class TagMonitor(commands.Cog):
         
         # Si le primary guild a changé
         if before_pg != after_pg:
-            logger.debug(f"Primary guild change detected via on_user_update for {after.name}")
+            logger.debug(f"Primary guild change detected via on_user_update for user_id={after.id}")
             if before_pg:
                 logger.debug(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
             else:
@@ -168,7 +168,7 @@ class TagMonitor(commands.Cog):
                 
                 # Si le statut du tag a changé, mettre à jour les rôles
                 if before_has_tag != has_tag:
-                    logger.debug(f"Tag change detected for {member.name} in {guild.name}: {before_has_tag} -> {has_tag}")
+                    logger.debug(f"Tag change detected for member_id={member.id} in guild_id={guild.id}: {before_has_tag} -> {has_tag}")
                     await self._update_member_roles(member, has_tag, role_ids)
     
     @commands.Cog.listener()
@@ -187,7 +187,7 @@ class TagMonitor(commands.Cog):
         
         # Vérifier si le nouveau membre a le tag
         if self._member_has_tag(member, tag_to_watch):
-            logger.info(f"New member {member.name} joined with matching tag")
+            logger.info(f"New member joined with matching tag: member_id={member.id}")
             await self._update_member_roles(member, True, role_ids)
     
     async def _fetch_fresh_member(self, guild: discord.Guild, member_id: int) -> Optional[discord.Member]:
@@ -203,51 +203,51 @@ class TagMonitor(commands.Cog):
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
         try:
-            logger.debug(f"Checking member: {member.name} (ID: {member.id})")
+            logger.debug(f"Checking member: member_id={member.id}")
             
             # Vérifier si l'attribut primary_guild existe
             if not hasattr(member, 'primary_guild'):
-                logger.warning(f"{member.name} - No primary_guild attribute found. Discord.py version might be too old or member data is incomplete.")
+                logger.warning(f"Member ID {member.id} - No primary_guild attribute found. Discord.py version might be too old or member data is incomplete.")
                 return False
             
             # Accéder à primary_guild
             pg = member.primary_guild
             if pg is None:
-                logger.debug(f"{member.name} - primary_guild is None")
+                logger.debug(f"Member ID {member.id} - primary_guild is None")
                 return False
                 
-            logger.debug(f"{member.name} - Primary Guild found: ID={pg.id}, Tag={pg.tag}, Identity enabled={pg.identity_enabled}")
+            logger.debug(f"Member ID {member.id} - Primary Guild found: ID={pg.id}, Tag={pg.tag}, Identity enabled={pg.identity_enabled}")
             
             # Vérifier si l'identité est activée (publiquement affichée)
             if pg.identity_enabled == False:
-                logger.debug(f"{member.name} has identity_enabled=False, skipping")
+                logger.debug(f"Member ID {member.id} has identity_enabled=False, skipping")
                 return False
             
             # Vérifier si le tag existe
             if not pg.tag:
-                logger.debug(f"{member.name} has no tag set (tag is None or empty)")
+                logger.debug(f"Member ID {member.id} has no tag set (tag is None or empty)")
                 return False
                 
             # Comparaison du tag
-            logger.debug(f"{member.name} - Comparing tags: member_tag='{pg.tag}' vs looking_for='{tag}'")
+            logger.debug(f"Member ID {member.id} - Comparing tags: member_tag='{pg.tag}' vs looking_for='{tag}'")
             
             # Comparaison exacte du tag (insensible à la casse)
             if pg.tag.lower() == tag.lower():
-                logger.debug(f"✅ {member.name} has matching tag: {pg.tag}")
+                logger.debug(f"✅ Member ID {member.id} has matching tag: {pg.tag}")
                 return True
             # Si le tag configuré contient un #, essayer une correspondance partielle
             elif '#' in tag and tag.lower() in pg.tag.lower():
-                logger.debug(f"✅ {member.name} has partial matching tag: {pg.tag} (looking for {tag})")
+                logger.debug(f"✅ Member ID {member.id} has partial matching tag: {pg.tag} (looking for {tag})")
                 return True
             else:
-                logger.debug(f"{member.name} has different tag: '{pg.tag}' (looking for '{tag}')")
+                logger.debug(f"Member ID {member.id} has different tag: '{pg.tag}' (looking for '{tag}')")
             
         except AttributeError as e:
             # En cas d'erreur d'attribut, log pour debug
-            logger.error(f"AttributeError accessing primary_guild for {member.name}: {e}")
+            logger.error(f"AttributeError accessing primary_guild for member_id={member.id}: {e}")
             logger.debug(f"Member attributes: {dir(member)}")
         except Exception as e:
-            logger.error(f"Unexpected error checking tag for {member.name}: {type(e).__name__}: {e}")
+            logger.error(f"Unexpected error checking tag for member_id={member.id}: {type(e).__name__}: {e}")
             
         return False
     
@@ -268,17 +268,17 @@ class TagMonitor(commands.Cog):
                 # Pour retirer, on doit modifier la liste des rôles
                 try:
                     await member.remove_roles(role, reason="Tag de serveur retiré")
-                    logger.debug(f"Removed role {role.name} from {member.name}")
+                    logger.debug(f"Removed role role_id={role.id} from member_id={member.id}")
                 except discord.HTTPException as e:
-                    logger.error(f"Error removing role {role.name} from {member}: {e}")
+                    logger.error(f"Error removing role role_id={role.id} from member_id={member.id}: {e}")
         
         # Ajouter les rôles en une seule fois
         if should_have_roles and roles_to_update:
             try:
                 await member.add_roles(*roles_to_update, reason="Tag de serveur détecté")
-                logger.debug(f"Added roles {[r.name for r in roles_to_update]} to {member.name}")
+                logger.debug(f"Added roles {[r.id for r in roles_to_update]} to member_id={member.id}")
             except discord.HTTPException as e:
-                logger.error(f"Error adding roles to {member}: {e}")
+                logger.error(f"Error adding roles to member_id={member.id}: {e}")
     
     async def check_all_tags(self):
         """Vérifier tous les tags pour tous les serveurs (utilisé au démarrage et quotidiennement)"""
