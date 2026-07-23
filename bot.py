@@ -2,11 +2,12 @@ import discord
 from discord.ext import commands
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 
 import asyncio
 from dotenv import load_dotenv
 
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from database import DatabaseManager
 
 # Charger les variables d'environnement EN PREMIER
@@ -14,25 +15,32 @@ load_dotenv()
 
 # Configuration du logging APRÈS le chargement des variables d'environnement
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+# LOG_FILE="" désactive le fichier (ex: sous Docker, stdout suffit et Docker gère la rotation)
+log_file = os.getenv('LOG_FILE', 'bot.log')
+
+log_handlers: list = [logging.StreamHandler()]
+if log_file:
+    # Rotation pour ne jamais remplir le disque du VPS : 5 Mo x 3 fichiers max
+    log_handlers.append(RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8'))
+
 logging.basicConfig(
     level=getattr(logging, log_level, logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('bot.log', encoding='utf-8')
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger('PickTag2GetRole')
 logger.info(f"Logging level set to: {log_level}")
 logger.info(f"Discord.py version: {discord.__version__}")
 
-# Configuration optimisée pour un VPS léger
-intents = discord.Intents.all()
+# Uniquement les intents réellement nécessaires (moins d'événements = moins de CPU/bande passante,
+# et pas de données reçues au-delà de ce que la privacy policy annonce) :
+# - guilds : événements de serveur et cache des rôles
+# - members (privilégié) : on_member_join/update, fetch_members pour les scans
+# - presences (privilégié) : les changements de tag (primary_guild) arrivent via PRESENCE_UPDATE
+intents = discord.Intents.none()
 intents.guilds = True
 intents.members = True
-intents.presences = True  # Nécessaire pour accéder à primary_guild
-intents.guild_messages = False  # Désactiver les messages pour économiser des ressources
-intents.message_content = False
+intents.presences = True
 
 class PickTag2GetRole(commands.Bot):
     def __init__(self):
@@ -125,6 +133,8 @@ async def on_guild_join(guild: discord.Guild):
 async def on_guild_remove(guild: discord.Guild):
     """When bot is removed from a server, delete its data"""
     await bot.db.delete_guild_config(guild.id)
+    async with bot.cache_lock:
+        bot.config_cache.pop(guild.id, None)
     logger.info(f"Bot removed from server {guild.id}, data deleted | Total servers: {len(bot.guilds)}")
 
 @bot.event

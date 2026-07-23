@@ -1,15 +1,19 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import List
 import logging
+import re
 
 logger = logging.getLogger('PickTag2GetRole.Commands')
+
+ROLE_MENTION_RE = re.compile(r'<@&(\d+)>')
+MAX_TAG_LENGTH = 32
+MAX_ROLES = 15
 
 class ConfigCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-    
+
     @app_commands.command(name="config", description="Configure the bot to monitor a server tag")
     @app_commands.describe(
         tag="The server tag to monitor",
@@ -19,39 +23,70 @@ class ConfigCommands(commands.Cog):
     @app_commands.guild_only()
     async def config(self, interaction: discord.Interaction, tag: str, roles: str):
         """Configure the tag to monitor and roles to assign"""
-        # Les permissions sont déjà vérifiées par @default_permissions
-        # Pas besoin de vérifier à nouveau
-        
-        # Parser les rôles mentionnés
-        role_mentions = roles.split()
-        role_ids = []
-        role_names = []
-        
-        for mention in role_mentions:
-            # Extraire l'ID du rôle depuis la mention
-            if mention.startswith('<@&') and mention.endswith('>'):
-                role_id = int(mention[3:-1])
-                role = interaction.guild.get_role(role_id)
-                if role:
-                    role_ids.append(role_id)
-                    role_names.append(role.name)
-        
-        if not role_ids:
+        tag = tag.strip()
+        if not tag or len(tag) > MAX_TAG_LENGTH:
             await interaction.response.send_message(
-                "❌ No valid roles found. Please mention roles with @.",
+                f"❌ Invalid tag. It must be between 1 and {MAX_TAG_LENGTH} characters.",
                 ephemeral=True
             )
             return
-        
+
+        guild = interaction.guild
+        invoker = interaction.user
+        is_owner = guild.owner_id == invoker.id
+
+        # Parser les rôles mentionnés et vérifier la hiérarchie :
+        # personne ne doit pouvoir faire distribuer par le bot un rôle
+        # qu'il ne pourrait pas attribuer lui-même à la main.
+        role_ids = []
+        role_names = []
+        rejected = []
+        seen = set()
+
+        for role_id_str in ROLE_MENTION_RE.findall(roles):
+            role_id = int(role_id_str)
+            if role_id in seen:
+                continue
+            seen.add(role_id)
+
+            role = guild.get_role(role_id)
+            if role is None:
+                continue
+            if role.is_default() or role.managed:
+                rejected.append(f"{role.name} — cannot be assigned by a bot")
+                continue
+            if role >= guild.me.top_role:
+                rejected.append(f"{role.name} — higher than or equal to my highest role")
+                continue
+            if not is_owner and role >= invoker.top_role:
+                rejected.append(f"{role.name} — higher than or equal to your highest role")
+                continue
+            role_ids.append(role_id)
+            role_names.append(role.name)
+
+        if len(role_ids) > MAX_ROLES:
+            await interaction.response.send_message(
+                f"❌ Too many roles ({len(role_ids)}). Maximum is {MAX_ROLES}.",
+                ephemeral=True
+            )
+            return
+
+        if not role_ids:
+            message = "❌ No valid roles found. Please mention roles with @."
+            if rejected:
+                message += "\n\nRejected roles:\n" + "\n".join(f"• {r}" for r in rejected)
+            await interaction.response.send_message(message, ephemeral=True)
+            return
+
         # Sauvegarder la configuration
         config = {
             'tag_to_watch': tag,
             'role_ids': role_ids,
             'enabled': True
         }
-        
+
         await self.bot.set_guild_config(interaction.guild.id, config)
-        
+
         # Réponse
         embed = discord.Embed(
             title="✅ Configuration updated",
@@ -63,8 +98,48 @@ class ConfigCommands(commands.Cog):
             value="\n".join([f"• {name}" for name in role_names]),
             inline=False
         )
-        
+        if rejected:
+            embed.add_field(
+                name="⚠️ Ignored roles",
+                value="\n".join([f"• {r}" for r in rejected]),
+                inline=False
+            )
+        if not guild.me.guild_permissions.manage_roles:
+            embed.add_field(
+                name="⚠️ Missing permission",
+                value="I don't have the **Manage Roles** permission, so I won't be able to assign anything.",
+                inline=False
+            )
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="reset", description="Delete this server's configuration and stored data")
+    @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
+    async def reset(self, interaction: discord.Interaction):
+        """Delete all stored data for this server"""
+        config = await self.bot.get_guild_config(interaction.guild.id)
+
+        if not config:
+            await interaction.response.send_message(
+                "❌ No configuration found for this server.",
+                ephemeral=True
+            )
+            return
+
+        await self.bot.db.delete_guild_config(interaction.guild.id)
+        async with self.bot.cache_lock:
+            self.bot.config_cache.pop(interaction.guild.id, None)
+
+        tag_monitor = self.bot.get_cog('TagMonitor')
+        if tag_monitor:
+            tag_monitor.member_cache.pop(interaction.guild.id, None)
+
+        await interaction.response.send_message(
+            "🗑️ Configuration deleted. The bot no longer stores any data for this server.\n"
+            "Note: roles previously assigned by the bot are **not** removed.",
+            ephemeral=True
+        )
     
     @app_commands.command(name="status", description="View the current bot configuration")
     @app_commands.default_permissions(manage_roles=True)
@@ -179,7 +254,13 @@ class ConfigCommands(commands.Cog):
             value="Check a specific member's tag status and see if they should have the configured roles.",
             inline=False
         )
-        
+
+        embed.add_field(
+            name="/reset",
+            value="Delete this server's configuration and all data stored by the bot.",
+            inline=False
+        )
+
         embed.add_field(
             name="/help",
             value="Show this help message.",

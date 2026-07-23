@@ -3,7 +3,11 @@ server_configs.json
 server_configs.json.backup
 data/*.db
 data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 *.db-journal
+*.db-wal
+*.db-shm
 __pycache__/
 *.py[cod]
 *$py.class

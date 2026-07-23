@@ -1,13 +1,21 @@
 # Privacy Policy - PickTag2GetRole Bot
 
-*Last updated: August 2025*
+*Last updated: July 2026*
 
 ## What We Collect
 - **Server Information**: Discord server ID where the bot is installed
-- **User Information**: Discord user ID and username of members in the server
+- **User Information**: Discord user IDs of server members (processed in memory only, never stored)
 - **Tag Configuration**: The specific server tag you configure the bot to monitor
 - **Role Configuration**: The role IDs you configure to be assigned/removed
-- **Primary Guild Data**: User's primary server information (server ID, tag, and whether it's publicly displayed)
+- **Primary Guild Data**: User's primary server information (server ID, tag, and whether it's publicly displayed), processed in memory only
+
+## Discord Gateway Intents
+The bot only subscribes to the minimum Discord gateway intents required to function:
+- **Guilds**: server and role information
+- **Server Members** (privileged): member list and member updates, used for role assignment and scans
+- **Presences** (privileged): required to detect server tag (primary guild) changes in real time
+
+The bot does **not** subscribe to message, reaction, typing, voice, or moderation events.
 
 ## How We Use Data
 - Monitor if users have the configured server tag in their profile
@@ -33,6 +41,7 @@
 ## Your Rights
 - View your configuration with `/status` command
 - Disable monitoring with `/toggle` command
+- Delete all stored data instantly with the `/reset` command
 - Remove all data by kicking the bot from your server (data is automatically deleted)
 - Request manual data deletion via GitHub
 
@@ -44,6 +53,7 @@
 ## Security
 - Data is stored locally with file system permissions
 - No external API calls except Discord's official API
+- Logs contain Discord IDs only (never usernames or message content) and are automatically rotated
 - Open-source code allows full transparency
 
 ## Contact

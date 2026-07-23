@@ -1,16 +1,20 @@
-version: '3.8'
-
 services:
   picktag2getrole:
     build: .
     container_name: picktag2getrole
     restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Pas de fichier de log dans le conteneur : stdout suffit,
+      # la rotation est gérée par Docker (voir section logging)
+      - LOG_FILE=
     volumes:
       # Monter le dossier de données pour la persistance
       - ./data:/app/data:rw
-      - ./.env:/app/.env:ro
     # Limiter les ressources pour un VPS léger
     deploy:
       resources:
