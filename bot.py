@@ -53,6 +53,7 @@ class PickTag2GetRole(commands.Bot):
         self.db = DatabaseManager()
         self.config_cache: Dict[int, Dict] = {}
         self.cache_lock = asyncio.Lock()
+        self.synced = False
         
     async def setup_hook(self):
         """Initialiser le bot"""
@@ -69,26 +70,23 @@ class PickTag2GetRole(commands.Bot):
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         """Minimal error handler for slash commands"""
-        if isinstance(error, discord.app_commands.TransformerError):
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "❌ This command can only be used in a server, not in DMs.",
-                    ephemeral=True
-                )
-        elif isinstance(error, discord.app_commands.CommandInvokeError):
-            if "'User' object has no attribute 'guild_permissions'" in str(error):
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "❌ This command can only be used in a server, not in DMs.",
-                        ephemeral=True
-                    )
+        if isinstance(error, discord.app_commands.CommandOnCooldown):
+            message = f"⏳ This command is on cooldown. Try again in {int(error.retry_after) + 1}s."
+        elif isinstance(error, (discord.app_commands.TransformerError, discord.app_commands.NoPrivateMessage)):
+            message = "❌ This command can only be used in a server, not in DMs."
+        elif isinstance(error, discord.app_commands.CheckFailure):
+            message = "❌ You are not allowed to use this command."
+        else:
+            logger.error(f"Command error: {error}")
+            message = "❌ An error occurred while executing the command."
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
             else:
-                logger.error(f"Command error: {error}")
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "❌ An error occurred while executing the command.",
-                        ephemeral=True
-                    )
+                await interaction.response.send_message(message, ephemeral=True)
+        except discord.HTTPException:
+            pass
         
     async def load_configs_to_cache(self):
         """Load all enabled configurations to cache for performance"""
@@ -143,13 +141,16 @@ async def on_ready():
     logger.info(f'Bot connected as {bot.user.name}')
     logger.info(f'ID: {bot.user.id}')
     logger.info(f'Servers: {len(bot.guilds)}')
-    
-    # Synchroniser les commandes slash
-    try:
-        synced = await bot.tree.sync()
-        logger.info(f"{len(synced)} commands synced")
-    except Exception as e:
-        logger.error(f"Error syncing commands: {e}")
+
+    # Synchroniser les commandes slash (une seule fois : on_ready se re-déclenche
+    # à chaque reconnexion et la synchro est fortement rate-limitée par Discord)
+    if not bot.synced:
+        try:
+            synced = await bot.tree.sync()
+            bot.synced = True
+            logger.info(f"{len(synced)} commands synced")
+        except Exception as e:
+            logger.error(f"Error syncing commands: {e}")
 
 async def main():
     """Fonction principale pour lancer le bot"""

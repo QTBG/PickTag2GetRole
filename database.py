@@ -1,4 +1,3 @@
-import sqlite3
 import json
 import asyncio
 import os
@@ -20,6 +19,9 @@ class DatabaseManager:
         """Initialize the database with required tables"""
         async with self.init_lock:
             async with aiosqlite.connect(self.db_path) as db:
+                # WAL : écritures moins coûteuses et lectures non bloquantes
+                # (propriété persistante du fichier, définie une seule fois)
+                await db.execute('PRAGMA journal_mode=WAL')
                 await db.execute('''
                     CREATE TABLE IF NOT EXISTS guild_configs (
                         guild_id INTEGER PRIMARY KEY,
@@ -36,6 +38,7 @@ class DatabaseManager:
     async def get_db(self):
         """Get a database connection"""
         async with aiosqlite.connect(self.db_path) as db:
+            await db.execute('PRAGMA busy_timeout=5000')
             yield db
     
     async def get_guild_config(self, guild_id: int) -> Optional[Dict]:

@@ -274,81 +274,68 @@ class ConfigCommands(commands.Cog):
     @app_commands.command(name="scan", description="Manually scan all members now")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
+    @app_commands.checks.cooldown(1, 60.0, key=lambda i: i.guild_id)
     async def scan(self, interaction: discord.Interaction):
         """Force an immediate scan of all members"""
         config = await self.bot.get_guild_config(interaction.guild.id)
-        
+
         if not config or not config.get('enabled', False):
             await interaction.response.send_message(
                 "❌ The bot is not enabled for this server. Use `/toggle` to enable it.",
                 ephemeral=True
             )
             return
-        
-        await interaction.response.defer(ephemeral=True)
-        
+
         tag_to_watch = config.get('tag_to_watch')
         role_ids = config.get('role_ids', [])
-        
+
         if not tag_to_watch or not role_ids:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Incomplete configuration. Please reconfigure with `/config`.",
                 ephemeral=True
             )
             return
-        
+
         # Obtenir le cog TagMonitor
         tag_monitor = self.bot.get_cog('TagMonitor')
         if not tag_monitor:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Monitoring module not loaded.",
                 ephemeral=True
             )
             return
-        
-        # Scanner tous les membres
-        members_updated = 0
-        total_members = 0
-        members_with_tag = 0
-        
-        logger.info(f"Starting scan for tag: {tag_to_watch}")
-        
-        async for member in interaction.guild.fetch_members(limit=None):
-            total_members += 1
-            has_tag = tag_monitor._member_has_tag(member, tag_to_watch)
-            
-            if has_tag:
-                members_with_tag += 1
-            
-            # Vérifier si le membre doit avoir les rôles
-            needs_update = False
-            roles_to_add = []
-            roles_to_remove = []
-            
-            for role_id in role_ids:
-                role = interaction.guild.get_role(role_id)
-                if role:
-                    has_role = role in member.roles
-                    if has_tag and not has_role:
-                        needs_update = True
-                        roles_to_add.append(role.name)
-                    elif not has_tag and has_role:
-                        needs_update = True
-                        roles_to_remove.append(role.name)
-            
-            if needs_update:
-                await tag_monitor._update_member_roles(member, has_tag, role_ids)
-                members_updated += 1
-        
+
+        await interaction.response.defer(ephemeral=True)
+
+        logger.info(f"Starting manual scan for guild {interaction.guild.id}")
+        stats = await tag_monitor.scan_guild(interaction.guild, tag_to_watch, role_ids)
+
+        if stats is None:
+            await interaction.followup.send(
+                "⏳ A scan is already in progress for this server. Please wait for it to finish.",
+                ephemeral=True
+            )
+            return
+
         embed = discord.Embed(
             title="✅ Scan completed",
             color=discord.Color.green(),
-            description=f"**{total_members}** members scanned\n**{members_with_tag}** members with tag '{tag_to_watch}'\n**{members_updated}** members updated"
+            description=(
+                f"**{stats['checked']}** members scanned\n"
+                f"**{stats['tagged']}** members with tag '{tag_to_watch}'\n"
+                f"**{stats['updated']}** members updated"
+            )
         )
-        
-        logger.info(f"Scan completed: {total_members} scanned, {members_with_tag} with tag, {members_updated} updated")
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        logger.info(f"Manual scan completed for guild {interaction.guild.id}: "
+                    f"{stats['checked']} scanned, {stats['tagged']} with tag, {stats['updated']} updated")
+
+        try:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except discord.HTTPException:
+            # Le token d'interaction expire après 15 min : sur un très gros serveur,
+            # le scan peut durer plus longtemps. Le résultat reste dans les logs.
+            pass
     
     @app_commands.command(name="check", description="Check a specific member's tag status")
     @app_commands.describe(member="The member to check")
