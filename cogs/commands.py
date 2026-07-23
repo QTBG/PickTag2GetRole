@@ -2,9 +2,24 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
+import math
+import os
 import re
+import time
+from datetime import timedelta
 
 logger = logging.getLogger('PickTag2GetRole.Commands')
+
+def _get_rss_mb() -> float | None:
+    """Mémoire résidente actuelle du process en Mo (Linux uniquement)"""
+    try:
+        with open('/proc/self/status') as f:
+            for line in f:
+                if line.startswith('VmRSS:'):
+                    return int(line.split()[1]) / 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
 
 ROLE_MENTION_RE = re.compile(r'<@&(\d+)>')
 MAX_TAG_LENGTH = 32
@@ -183,13 +198,22 @@ class ConfigCommands(commands.Cog):
             )
         else:
             embed.add_field(name="Roles", value="No roles configured", inline=False)
-        
+
+        tag_monitor = self.bot.get_cog('TagMonitor')
+        tagged_count = tag_monitor.get_tagged_count(interaction.guild.id) if tag_monitor else None
+        if tagged_count is not None:
+            embed.add_field(
+                name="Members with tag",
+                value=f"{tagged_count} (as of last scan)",
+                inline=False
+            )
+
         embed.add_field(
             name="Status",
             value="✅ Enabled" if config.get('enabled', False) else "❌ Disabled",
             inline=False
         )
-        
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="toggle", description="Enable or disable tag monitoring")
@@ -394,6 +418,56 @@ class ConfigCommands(commands.Cog):
                 inline=False
             )
         
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="botstats", description="Global bot statistics (bot owner only)")
+    @app_commands.default_permissions(administrator=True)
+    async def botstats(self, interaction: discord.Interaction):
+        """Global statistics, restricted to the bot owner"""
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message(
+                "❌ This command is restricted to the bot owner.",
+                ephemeral=True
+            )
+            return
+
+        guilds = self.bot.guilds
+        total_members = sum(g.member_count or 0 for g in guilds)
+        enabled_count = len(self.bot.config_cache)
+
+        tag_monitor = self.bot.get_cog('TagMonitor')
+        tracked_tagged = sum(len(s) for s in tag_monitor.member_cache.values()) if tag_monitor else 0
+        scanned_guilds = len(tag_monitor.member_cache) if tag_monitor else 0
+
+        uptime = timedelta(seconds=int(time.monotonic() - self.bot.start_time))
+        latency = self.bot.latency
+        latency_text = f"{round(latency * 1000)} ms" if math.isfinite(latency) else "n/a"
+
+        rss_mb = _get_rss_mb()
+        try:
+            db_size_kb = os.path.getsize(self.bot.db.db_path) / 1024
+            db_text = f"{db_size_kb:.0f} KB"
+        except OSError:
+            db_text = "n/a"
+
+        embed = discord.Embed(
+            title="📈 Bot statistics",
+            color=discord.Color.blurple()
+        )
+        embed.add_field(name="Servers", value=f"{len(guilds)}", inline=True)
+        embed.add_field(name="Monitoring enabled", value=f"{enabled_count}", inline=True)
+        embed.add_field(name="Members (total reach)", value=f"{total_members:,}", inline=True)
+        embed.add_field(
+            name="Tagged members tracked",
+            value=f"{tracked_tagged:,} (across {scanned_guilds} scanned servers)",
+            inline=False
+        )
+        embed.add_field(name="Uptime", value=str(uptime), inline=True)
+        embed.add_field(name="Latency", value=latency_text, inline=True)
+        embed.add_field(name="Memory (RSS)", value=f"{rss_mb:.1f} MB" if rss_mb is not None else "n/a", inline=True)
+        embed.add_field(name="Database size", value=db_text, inline=True)
+        embed.add_field(name="discord.py", value=discord.__version__, inline=True)
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):

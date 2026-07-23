@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+import time
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -54,6 +55,7 @@ class PickTag2GetRole(commands.Bot):
         self.config_cache: Dict[int, Dict] = {}
         self.cache_lock = asyncio.Lock()
         self.synced = False
+        self.start_time = time.monotonic()
         
     async def setup_hook(self):
         """Initialiser le bot"""

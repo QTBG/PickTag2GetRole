@@ -70,12 +70,19 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - **`/config <tag> <@role1 @role2...>`** : Configure le tag à surveiller et les rôles à attribuer
   - Exemple : `/config [TAG] @Membre @VIP`
+  - Sécurité : impossible de configurer un rôle supérieur ou égal à votre rôle le plus élevé (ou à celui du bot)
   
-- **`/status`** : Affiche la configuration actuelle du bot
+- **`/status`** : Affiche la configuration actuelle du bot et le nombre de membres ayant le tag
   
 - **`/toggle`** : Active ou désactive la surveillance des tags
   
-- **`/scan`** : Force un scan immédiat de tous les membres (utile après la configuration initiale)
+- **`/scan`** : Force un scan immédiat de tous les membres (utile après la configuration initiale, cooldown de 60s)
+
+- **`/check <@membre>`** : Vérifie le statut du tag d'un membre spécifique
+
+- **`/reset`** : Supprime la configuration et toutes les données stockées pour ce serveur
+
+- **`/botstats`** : Statistiques globales du bot (réservé au propriétaire du bot) : serveurs, membres, uptime, RAM, latence, taille de la base
 
 ### Configuration initiale
 
@@ -92,6 +99,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
 - `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
+- `LOG_FILE` : Chemin du fichier de log (optionnel, défaut: `bot.log`, rotation automatique 5 Mo × 3). Mettre une valeur vide pour ne logger que sur stdout (recommandé sous Docker)
 
 ### Base de données
 
@@ -151,6 +159,13 @@ docker run -d \
 docker logs picktag2getrole
 ```
 
+### ⚠️ Migration depuis une ancienne version (conteneur root)
+
+Le conteneur tourne désormais avec un utilisateur non-root (UID 1000) pour plus de sécurité. Si votre dossier `data/` a été créé par une ancienne version (root), corrigez ses permissions une seule fois :
+```bash
+sudo chown -R 1000:1000 ./data
+```
+
 ## 🔑 Obtenir le token du bot
 
 1. **Créer une application Discord**
@@ -197,19 +212,20 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 
 ## 📝 Notes importantes
 
-1. **Tags de serveur** : Les tags peuvent être dans le nom d'affichage ou les décorations d'avatar
+1. **Tags de serveur** : Le bot lit le tag "Primary Guild" (tag de serveur) affiché sur le profil, à côté du pseudo. L'utilisateur doit l'avoir activé publiquement
 2. **Performance** : Le bot réagit instantanément aux changements via les événements Discord, avec une vérification quotidienne de sécurité
-3. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
+3. **Détection temps réel** : Elle dépend du cache des membres. Les gros serveurs (>250 membres) sont surtout couverts par le scan quotidien et `/scan` ; les petits serveurs bénéficient d'une détection instantanée complète
+4. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
 
 ## 🐛 Dépannage
 
 ### Le bot ne détecte pas les tags
-- **Vérifier les intents Discord** : PRESENCE INTENT doit être activé dans le Developer Portal
-- Vérifier que le tag est exactement comme configuré (respecter la casse)
+- **Vérifier les intents Discord** : PRESENCE INTENT et SERVER MEMBERS INTENT doivent être activés dans le Developer Portal
+- Vérifier que le tag est exactement comme configuré
 - S'assurer que le bot a les permissions nécessaires
-- Utiliser `/scan debug:True` pour activer les logs détaillés (consultez bot.log)
-- Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) en public
-- Pour un debug permanent, définir `LOG_LEVEL=DEBUG` dans le fichier .env
+- Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) affiché publiquement
+- Pour des logs détaillés, définir `LOG_LEVEL=DEBUG` dans le fichier .env puis consulter bot.log (ou `docker logs`)
+- Lancer `/scan` pour forcer une resynchronisation immédiate
 
 ### Erreurs de permissions
 - Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer
@@ -301,12 +317,19 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - **`/config <tag> <@role1 @role2...>`**: Configure the tag to monitor and roles to assign
   - Example: `/config [TAG] @Member @VIP`
+  - Security: you cannot configure a role higher than or equal to your own highest role (or the bot's)
   
-- **`/status`**: Display current bot configuration
+- **`/status`**: Display current bot configuration and how many members have the tag
   
 - **`/toggle`**: Enable or disable tag monitoring
   
-- **`/scan`**: Force an immediate scan of all members (useful after initial configuration)
+- **`/scan`**: Force an immediate scan of all members (useful after initial configuration, 60s cooldown)
+
+- **`/check <@member>`**: Check a specific member's tag status
+
+- **`/reset`**: Delete the configuration and all stored data for this server
+
+- **`/botstats`**: Global bot statistics (bot owner only): servers, members, uptime, RAM, latency, database size
 
 ### Initial Setup
 
@@ -323,6 +346,7 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - `DISCORD_TOKEN`: Discord bot token (required)
 - `LOG_LEVEL`: Logging level (optional, default: INFO). Possible values: DEBUG, INFO, WARNING, ERROR
+- `LOG_FILE`: Log file path (optional, default: `bot.log`, automatic rotation 5 MB × 3). Set to an empty value to log to stdout only (recommended with Docker)
 
 ### Database
 
@@ -381,6 +405,13 @@ docker run -d \
 docker logs picktag2getrole
 ```
 
+### ⚠️ Migrating from an older version (root container)
+
+The container now runs as a non-root user (UID 1000) for better security. If your `data/` folder was created by an older (root) version, fix its permissions once:
+```bash
+sudo chown -R 1000:1000 ./data
+```
+
 ## 🔑 Getting the Bot Token
 
 1. **Create a Discord application**
@@ -427,19 +458,20 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436
 
 ## 📝 Important Notes
 
-1. **Server tags**: Tags can be in the display name or avatar decorations
+1. **Server tags**: The bot reads the "Primary Guild" tag (server tag) displayed on the profile, next to the username. Users must have it publicly enabled
 2. **Performance**: The bot responds instantly to changes via Discord events, with a daily safety verification
-3. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
+3. **Real-time detection**: It depends on the member cache. Large servers (>250 members) are mostly covered by the daily scan and `/scan`; small servers get full instant detection
+4. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
 
 ## 🐛 Troubleshooting
 
 ### Bot doesn't detect tags
-- **Check Discord intents**: PRESENCE INTENT must be enabled in the Developer Portal
-- Verify that the tag is exactly as configured (case sensitive)
+- **Check Discord intents**: PRESENCE INTENT and SERVER MEMBERS INTENT must be enabled in the Developer Portal
+- Verify that the tag is exactly as configured
 - Ensure the bot has necessary permissions
-- Use `/scan debug:True` to enable detailed logs (check bot.log)
-- Verify that users have their "Primary Guild" (server tag) public
-- For permanent debug, set `LOG_LEVEL=DEBUG` in the .env file
+- Verify that users have their "Primary Guild" (server tag) publicly displayed
+- For detailed logs, set `LOG_LEVEL=DEBUG` in the .env file then check bot.log (or `docker logs`)
+- Run `/scan` to force an immediate resynchronization
 
 ### Permission errors
 - The bot must have a role higher than the roles it's trying to assign
