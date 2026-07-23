@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from typing import Dict, Optional
 from database import DatabaseManager
+from i18n import t, CommandTranslator
 
 # Charger les variables d'environnement EN PREMIER
 load_dotenv()
@@ -59,6 +60,9 @@ class PickTag2GetRole(commands.Bot):
         
     async def setup_hook(self):
         """Initialiser le bot"""
+        # Localisation native des commandes slash (appliquée à la synchronisation)
+        await self.tree.set_translator(CommandTranslator())
+
         await self.db.initialize()
 
         await self.load_configs_to_cache()
@@ -72,15 +76,16 @@ class PickTag2GetRole(commands.Bot):
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         """Minimal error handler for slash commands"""
+        locale = interaction.locale
         if isinstance(error, discord.app_commands.CommandOnCooldown):
-            message = f"⏳ This command is on cooldown. Try again in {int(error.retry_after) + 1}s."
+            message = t(locale, 'err.cooldown', seconds=int(error.retry_after) + 1)
         elif isinstance(error, (discord.app_commands.TransformerError, discord.app_commands.NoPrivateMessage)):
-            message = "❌ This command can only be used in a server, not in DMs."
+            message = t(locale, 'err.guild_only')
         elif isinstance(error, discord.app_commands.CheckFailure):
-            message = "❌ You are not allowed to use this command."
+            message = t(locale, 'err.not_allowed')
         else:
             logger.error(f"Command error: {error}")
-            message = "❌ An error occurred while executing the command."
+            message = t(locale, 'err.generic')
 
         try:
             if interaction.response.is_done():

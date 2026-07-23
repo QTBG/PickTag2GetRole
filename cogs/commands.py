@@ -6,9 +6,17 @@ import math
 import os
 import re
 import time
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
+
+from database import STATS_RETENTION_DAYS
+from i18n import t
 
 logger = logging.getLogger('PickTag2GetRole.Commands')
+
+ROLE_MENTION_RE = re.compile(r'<@&(\d+)>')
+MAX_TAG_LENGTH = 32
+MAX_ROLES = 15
+SPARK_BLOCKS = '▁▂▃▄▅▆▇█'
 
 def _get_rss_mb() -> float | None:
     """Mémoire résidente actuelle du process en Mo (Linux uniquement)"""
@@ -21,9 +29,14 @@ def _get_rss_mb() -> float | None:
         pass
     return None
 
-ROLE_MENTION_RE = re.compile(r'<@&(\d+)>')
-MAX_TAG_LENGTH = 32
-MAX_ROLES = 15
+def _sparkline(values: list[int]) -> str:
+    """Mini-graphe en blocs Unicode"""
+    if not values:
+        return ''
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        return SPARK_BLOCKS[3] * len(values)
+    return ''.join(SPARK_BLOCKS[round((v - lo) / (hi - lo) * 7)] for v in values)
 
 class ConfigCommands(commands.Cog):
     def __init__(self, bot):
@@ -38,10 +51,11 @@ class ConfigCommands(commands.Cog):
     @app_commands.guild_only()
     async def config(self, interaction: discord.Interaction, tag: str, roles: str):
         """Configure the tag to monitor and roles to assign"""
+        locale = interaction.locale
         tag = tag.strip()
         if not tag or len(tag) > MAX_TAG_LENGTH:
             await interaction.response.send_message(
-                f"❌ Invalid tag. It must be between 1 and {MAX_TAG_LENGTH} characters.",
+                t(locale, 'config.invalid_tag', max=MAX_TAG_LENGTH),
                 ephemeral=True
             )
             return
@@ -68,28 +82,29 @@ class ConfigCommands(commands.Cog):
             if role is None:
                 continue
             if role.is_default() or role.managed:
-                rejected.append(f"{role.name} — cannot be assigned by a bot")
+                rejected.append(f"{role.name} — {t(locale, 'config.reject_managed')}")
                 continue
             if role >= guild.me.top_role:
-                rejected.append(f"{role.name} — higher than or equal to my highest role")
+                rejected.append(f"{role.name} — {t(locale, 'config.reject_above_bot')}")
                 continue
             if not is_owner and role >= invoker.top_role:
-                rejected.append(f"{role.name} — higher than or equal to your highest role")
+                rejected.append(f"{role.name} — {t(locale, 'config.reject_above_you')}")
                 continue
             role_ids.append(role_id)
             role_names.append(role.name)
 
         if len(role_ids) > MAX_ROLES:
             await interaction.response.send_message(
-                f"❌ Too many roles ({len(role_ids)}). Maximum is {MAX_ROLES}.",
+                t(locale, 'config.too_many_roles', count=len(role_ids), max=MAX_ROLES),
                 ephemeral=True
             )
             return
 
         if not role_ids:
-            message = "❌ No valid roles found. Please mention roles with @."
+            message = t(locale, 'config.no_valid_roles')
             if rejected:
-                message += "\n\nRejected roles:\n" + "\n".join(f"• {r}" for r in rejected)
+                message += "\n\n" + t(locale, 'config.rejected_header') + "\n" + \
+                    "\n".join(f"• {r}" for r in rejected)
             await interaction.response.send_message(message, ephemeral=True)
             return
 
@@ -104,40 +119,47 @@ class ConfigCommands(commands.Cog):
 
         # Réponse
         embed = discord.Embed(
-            title="✅ Configuration updated",
+            title=t(locale, 'config.updated_title'),
             color=discord.Color.green(),
-            description=f"The bot will now monitor the tag **{tag}**"
+            description=t(locale, 'config.updated_desc', tag=tag)
         )
         embed.add_field(
-            name="Roles to assign",
+            name=t(locale, 'config.roles_field'),
             value="\n".join([f"• {name}" for name in role_names]),
             inline=False
         )
         if rejected:
             embed.add_field(
-                name="⚠️ Ignored roles",
+                name=t(locale, 'config.ignored_field'),
                 value="\n".join([f"• {r}" for r in rejected]),
                 inline=False
             )
         if not guild.me.guild_permissions.manage_roles:
             embed.add_field(
-                name="⚠️ Missing permission",
-                value="I don't have the **Manage Roles** permission, so I won't be able to assign anything.",
+                name=t(locale, 'config.missing_perm_field'),
+                value=t(locale, 'config.missing_perm_text'),
                 inline=False
             )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        # Charger le cache des membres pour la détection temps réel (après la réponse
+        # pour ne pas la retarder sur les gros serveurs)
+        tag_monitor = self.bot.get_cog('TagMonitor')
+        if tag_monitor:
+            await tag_monitor.ensure_chunked(guild)
 
     @app_commands.command(name="reset", description="Delete this server's configuration and stored data")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def reset(self, interaction: discord.Interaction):
         """Delete all stored data for this server"""
+        locale = interaction.locale
         config = await self.bot.get_guild_config(interaction.guild.id)
 
         if not config:
             await interaction.response.send_message(
-                "❌ No configuration found for this server.",
+                t(locale, 'common.no_config'),
                 ephemeral=True
             )
             return
@@ -150,37 +172,34 @@ class ConfigCommands(commands.Cog):
         if tag_monitor:
             tag_monitor.member_cache.pop(interaction.guild.id, None)
 
-        await interaction.response.send_message(
-            "🗑️ Configuration deleted. The bot no longer stores any data for this server.\n"
-            "Note: roles previously assigned by the bot are **not** removed.",
-            ephemeral=True
-        )
-    
+        await interaction.response.send_message(t(locale, 'reset.done'), ephemeral=True)
+
     @app_commands.command(name="status", description="View the current bot configuration")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def status(self, interaction: discord.Interaction):
         """Display current configuration"""
+        locale = interaction.locale
         config = await self.bot.get_guild_config(interaction.guild.id)
-        
+
         if not config:
             await interaction.response.send_message(
-                "❌ No configuration found for this server. Use `/config` to configure the bot.",
+                t(locale, 'status.no_config'),
                 ephemeral=True
             )
             return
-        
+
         embed = discord.Embed(
-            title="📊 Current configuration",
+            title=t(locale, 'status.title'),
             color=discord.Color.blue()
         )
-        
+
         embed.add_field(
-            name="Monitored tag",
-            value=config.get('tag_to_watch', 'Not set'),
+            name=t(locale, 'status.monitored_tag'),
+            value=config.get('tag_to_watch') or t(locale, 'status.not_set'),
             inline=False
         )
-        
+
         role_ids = config.get('role_ids', [])
         if role_ids:
             role_names = []
@@ -189,123 +208,104 @@ class ConfigCommands(commands.Cog):
                 if role:
                     role_names.append(role.name)
                 else:
-                    role_names.append(f"Deleted role (ID: {role_id})")
-            
+                    role_names.append(t(locale, 'status.deleted_role', id=role_id))
+
             embed.add_field(
-                name="Assigned roles",
+                name=t(locale, 'status.assigned_roles'),
                 value="\n".join([f"• {name}" for name in role_names]),
                 inline=False
             )
         else:
-            embed.add_field(name="Roles", value="No roles configured", inline=False)
+            embed.add_field(
+                name=t(locale, 'status.roles'),
+                value=t(locale, 'status.no_roles'),
+                inline=False
+            )
 
         tag_monitor = self.bot.get_cog('TagMonitor')
         tagged_count = tag_monitor.get_tagged_count(interaction.guild.id) if tag_monitor else None
         if tagged_count is not None:
             embed.add_field(
-                name="Members with tag",
-                value=f"{tagged_count} (as of last scan)",
+                name=t(locale, 'status.members_with_tag'),
+                value=t(locale, 'status.as_of_last_scan', count=tagged_count),
                 inline=False
             )
 
         embed.add_field(
-            name="Status",
-            value="✅ Enabled" if config.get('enabled', False) else "❌ Disabled",
+            name=t(locale, 'status.status'),
+            value=t(locale, 'status.enabled') if config.get('enabled', False)
+            else t(locale, 'status.disabled'),
             inline=False
         )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-    
+
     @app_commands.command(name="toggle", description="Enable or disable tag monitoring")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def toggle(self, interaction: discord.Interaction):
         """Enable/disable the bot for this server"""
+        locale = interaction.locale
         config = await self.bot.get_guild_config(interaction.guild.id)
-        
+
         if not config:
             await interaction.response.send_message(
-                "❌ No configuration found. Use `/config` first.",
+                t(locale, 'toggle.no_config'),
                 ephemeral=True
             )
             return
-        
+
         # Inverser l'état
         config['enabled'] = not config.get('enabled', False)
         await self.bot.set_guild_config(interaction.guild.id, config)
-        
-        status = "✅ enabled" if config['enabled'] else "❌ disabled"
-        await interaction.response.send_message(
-            f"Tag monitoring has been {status}.",
-            ephemeral=True
-        )
-    
+
+        message_key = 'toggle.enabled_msg' if config['enabled'] else 'toggle.disabled_msg'
+        await interaction.response.send_message(t(locale, message_key), ephemeral=True)
+
+        if config['enabled']:
+            tag_monitor = self.bot.get_cog('TagMonitor')
+            if tag_monitor:
+                await tag_monitor.ensure_chunked(interaction.guild)
+
     @app_commands.command(name="help", description="Show all available commands")
     async def help(self, interaction: discord.Interaction):
         """Display help for all commands"""
+        locale = interaction.locale
         embed = discord.Embed(
-            title="📚 PickTag2GetRole - Commands",
-            description="Here are all available commands:",
+            title=t(locale, 'help.title'),
+            description=t(locale, 'help.desc'),
             color=discord.Color.blue()
         )
-        
+
         embed.add_field(
             name="/config `tag` `@role1 @role2...`",
-            value="Configure the bot to monitor a specific server tag and assign roles to members who have it.",
+            value=t(locale, 'help.config'),
             inline=False
         )
-        
-        embed.add_field(
-            name="/status",
-            value="View the current configuration (monitored tag, assigned roles, enabled/disabled status).",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="/toggle",
-            value="Enable or disable tag monitoring for this server.",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="/scan",
-            value="Manually scan all server members and update their roles based on the current configuration.",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="/check `@member`",
-            value="Check a specific member's tag status and see if they should have the configured roles.",
-            inline=False
-        )
+        embed.add_field(name="/status", value=t(locale, 'help.status'), inline=False)
+        embed.add_field(name="/toggle", value=t(locale, 'help.toggle'), inline=False)
+        embed.add_field(name="/scan", value=t(locale, 'help.scan'), inline=False)
+        embed.add_field(name="/check `@member`", value=t(locale, 'help.check'), inline=False)
+        embed.add_field(name="/stats", value=t(locale, 'help.stats'), inline=False)
+        embed.add_field(name="/reset", value=t(locale, 'help.reset'), inline=False)
+        embed.add_field(name="/help", value=t(locale, 'help.help'), inline=False)
 
-        embed.add_field(
-            name="/reset",
-            value="Delete this server's configuration and all data stored by the bot.",
-            inline=False
-        )
+        embed.set_footer(text=t(locale, 'help.footer'))
 
-        embed.add_field(
-            name="/help",
-            value="Show this help message.",
-            inline=False
-        )
-        
-        embed.set_footer(text="Note: Most commands require the 'Manage Roles' permission.")
-        
         await interaction.response.send_message(embed=embed, ephemeral=True)
-    
+
     @app_commands.command(name="scan", description="Manually scan all members now")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 60.0, key=lambda i: i.guild_id)
     async def scan(self, interaction: discord.Interaction):
         """Force an immediate scan of all members"""
+        locale = interaction.locale
         config = await self.bot.get_guild_config(interaction.guild.id)
 
         if not config or not config.get('enabled', False):
             await interaction.response.send_message(
-                "❌ The bot is not enabled for this server. Use `/toggle` to enable it.",
+                t(locale, 'scan.not_enabled'),
                 ephemeral=True
             )
             return
@@ -315,7 +315,7 @@ class ConfigCommands(commands.Cog):
 
         if not tag_to_watch or not role_ids:
             await interaction.response.send_message(
-                "❌ Incomplete configuration. Please reconfigure with `/config`.",
+                t(locale, 'scan.incomplete'),
                 ephemeral=True
             )
             return
@@ -324,7 +324,7 @@ class ConfigCommands(commands.Cog):
         tag_monitor = self.bot.get_cog('TagMonitor')
         if not tag_monitor:
             await interaction.response.send_message(
-                "❌ Monitoring module not loaded.",
+                t(locale, 'scan.module_missing'),
                 ephemeral=True
             )
             return
@@ -335,20 +335,15 @@ class ConfigCommands(commands.Cog):
         stats = await tag_monitor.scan_guild(interaction.guild, tag_to_watch, role_ids)
 
         if stats is None:
-            await interaction.followup.send(
-                "⏳ A scan is already in progress for this server. Please wait for it to finish.",
-                ephemeral=True
-            )
+            await interaction.followup.send(t(locale, 'scan.in_progress'), ephemeral=True)
             return
 
         embed = discord.Embed(
-            title="✅ Scan completed",
+            title=t(locale, 'scan.done_title'),
             color=discord.Color.green(),
-            description=(
-                f"**{stats['checked']}** members scanned\n"
-                f"**{stats['tagged']}** members with tag '{tag_to_watch}'\n"
-                f"**{stats['updated']}** members updated"
-            )
+            description=t(locale, 'scan.done_desc',
+                          checked=stats['checked'], tagged=stats['tagged'],
+                          updated=stats['updated'], tag=tag_to_watch)
         )
 
         logger.info(f"Manual scan completed for guild {interaction.guild.id}: "
@@ -360,49 +355,57 @@ class ConfigCommands(commands.Cog):
             # Le token d'interaction expire après 15 min : sur un très gros serveur,
             # le scan peut durer plus longtemps. Le résultat reste dans les logs.
             pass
-    
+
     @app_commands.command(name="check", description="Check a specific member's tag status")
     @app_commands.describe(member="The member to check")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def check_member(self, interaction: discord.Interaction, member: discord.Member):
         """Check if a specific member has the configured tag"""
+        locale = interaction.locale
         config = await self.bot.get_guild_config(interaction.guild.id)
-        
+
         if not config:
             await interaction.response.send_message(
-                "❌ No configuration found for this server.",
+                t(locale, 'common.no_config'),
                 ephemeral=True
             )
             return
-        
-        tag_to_watch = config.get('tag_to_watch', 'Not configured')
-        
+
+        tag_to_watch = config.get('tag_to_watch') or t(locale, 'status.not_set')
+
         embed = discord.Embed(
-            title=f"🔍 Tag check for {member.name}",
+            title=t(locale, 'check.title', name=member.name),
             color=discord.Color.blue()
         )
-        
-        embed.add_field(name="Looking for tag", value=tag_to_watch, inline=False)
-        
+
+        embed.add_field(name=t(locale, 'check.looking_for'), value=tag_to_watch, inline=False)
+
         # Vérifier primary_guild
         if hasattr(member, 'primary_guild'):
             pg = member.primary_guild
             if pg:
-                embed.add_field(name="Primary Guild ID", value=pg.id or "None", inline=True)
-                embed.add_field(name="Primary Guild Tag", value=pg.tag or "None", inline=True)
-                embed.add_field(name="Identity Enabled", value=str(pg.identity_enabled), inline=True)
-                
+                none_text = t(locale, 'check.none')
+                embed.add_field(name="Primary Guild ID", value=pg.id or none_text, inline=True)
+                embed.add_field(name="Primary Guild Tag", value=pg.tag or none_text, inline=True)
+                embed.add_field(name=t(locale, 'check.identity'),
+                                value=str(pg.identity_enabled), inline=True)
+
                 # Vérifier si le tag correspond
                 tag_monitor = self.bot.get_cog('TagMonitor')
-                if tag_monitor and tag_to_watch != 'Not configured':
-                    has_tag = tag_monitor._member_has_tag(member, tag_to_watch)
-                    embed.add_field(name="Has matching tag?", value="✅ Yes" if has_tag else "❌ No", inline=False)
+                if tag_monitor and config.get('tag_to_watch'):
+                    has_tag = tag_monitor._member_has_tag(member, config['tag_to_watch'])
+                    embed.add_field(
+                        name=t(locale, 'check.has_matching'),
+                        value=t(locale, 'check.yes') if has_tag else t(locale, 'check.no'),
+                        inline=False
+                    )
             else:
-                embed.add_field(name="Primary Guild", value="None", inline=False)
+                embed.add_field(name="Primary Guild", value=t(locale, 'check.none'), inline=False)
         else:
-            embed.add_field(name="Error", value="Primary guild attribute not found. Check discord.py version.", inline=False)
-        
+            embed.add_field(name=t(locale, 'check.error'),
+                            value=t(locale, 'check.attr_missing'), inline=False)
+
         # Afficher les rôles actuels
         role_ids = config.get('role_ids', [])
         if role_ids:
@@ -411,13 +414,63 @@ class ConfigCommands(commands.Cog):
                 role = interaction.guild.get_role(role_id)
                 if role and role in member.roles:
                     assigned_roles.append(role.name)
-            
+
             embed.add_field(
-                name="Currently has configured roles",
-                value=", ".join(assigned_roles) if assigned_roles else "None",
+                name=t(locale, 'check.current_roles'),
+                value=", ".join(assigned_roles) if assigned_roles else t(locale, 'check.none'),
                 inline=False
             )
-        
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="stats", description="View tag statistics for this server")
+    @app_commands.default_permissions(manage_roles=True)
+    @app_commands.guild_only()
+    async def stats(self, interaction: discord.Interaction):
+        """Evolution of tagged member counts for this server"""
+        locale = interaction.locale
+        rows = await self.bot.db.get_tag_stats(interaction.guild.id, days=30)
+
+        if not rows:
+            await interaction.response.send_message(t(locale, 'stats.no_data'), ephemeral=True)
+            return
+
+        latest = rows[-1]
+        today = datetime.now(timezone.utc).date()
+
+        def change_text(days_back: int) -> str:
+            target = today - timedelta(days=days_back)
+            baseline = None
+            for row in rows:
+                if date.fromisoformat(row['date']) <= target:
+                    baseline = row
+                else:
+                    break
+            if baseline is None or baseline['date'] == latest['date']:
+                return t(locale, 'stats.no_baseline')
+            diff = latest['tagged'] - baseline['tagged']
+            sign = '+' if diff > 0 else ''
+            return f"{sign}{diff} ({baseline['tagged']} → {latest['tagged']})"
+
+        embed = discord.Embed(title=t(locale, 'stats.title'), color=discord.Color.blurple())
+        embed.add_field(
+            name=t(locale, 'stats.members'),
+            value=f"{latest['tagged']} ({latest['date']})",
+            inline=False
+        )
+        embed.add_field(name=t(locale, 'stats.change_7d'), value=change_text(7), inline=True)
+        embed.add_field(name=t(locale, 'stats.change_30d'), value=change_text(30), inline=True)
+
+        values = [row['tagged'] for row in rows[-14:]]
+        if len(values) >= 2:
+            embed.add_field(
+                name=t(locale, 'stats.trend', days=len(values)),
+                value=f"`{_sparkline(values)}` {min(values)}–{max(values)}",
+                inline=False
+            )
+
+        embed.set_footer(text=t(locale, 'stats.footer', days=STATS_RETENTION_DAYS))
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="botstats", description="Global bot statistics (bot owner only)")
@@ -426,18 +479,20 @@ class ConfigCommands(commands.Cog):
         """Global statistics, restricted to the bot owner"""
         if not await self.bot.is_owner(interaction.user):
             await interaction.response.send_message(
-                "❌ This command is restricted to the bot owner.",
+                t(interaction.locale, 'botstats.owner_only'),
                 ephemeral=True
             )
             return
 
         guilds = self.bot.guilds
         total_members = sum(g.member_count or 0 for g in guilds)
+        cached_members = sum(len(g.members) for g in guilds)
         enabled_count = len(self.bot.config_cache)
 
         tag_monitor = self.bot.get_cog('TagMonitor')
         tracked_tagged = sum(len(s) for s in tag_monitor.member_cache.values()) if tag_monitor else 0
         scanned_guilds = len(tag_monitor.member_cache) if tag_monitor else 0
+        chunking = tag_monitor.chunking_enabled if tag_monitor else False
 
         uptime = timedelta(seconds=int(time.monotonic() - self.bot.start_time))
         latency = self.bot.latency
@@ -462,6 +517,8 @@ class ConfigCommands(commands.Cog):
             value=f"{tracked_tagged:,} (across {scanned_guilds} scanned servers)",
             inline=False
         )
+        embed.add_field(name="Cached members", value=f"{cached_members:,}", inline=True)
+        embed.add_field(name="Chunking", value="enabled" if chunking else "disabled", inline=True)
         embed.add_field(name="Uptime", value=str(uptime), inline=True)
         embed.add_field(name="Latency", value=latency_text, inline=True)
         embed.add_field(name="Memory (RSS)", value=f"{rss_mb:.1f} MB" if rss_mb is not None else "n/a", inline=True)

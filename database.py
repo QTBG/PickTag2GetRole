@@ -1,9 +1,12 @@
 import json
 import asyncio
 import os
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 import aiosqlite
 from contextlib import asynccontextmanager
+
+# Durée de conservation des statistiques agrégées (compteurs journaliers, sans ID utilisateur)
+STATS_RETENTION_DAYS = 365
 
 class DatabaseManager:
     def __init__(self, db_path: str = 'data/bot_data.db'):
@@ -30,6 +33,16 @@ class DatabaseManager:
                         enabled INTEGER DEFAULT 1,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                # Statistiques agrégées : un compteur par serveur et par jour, aucun ID utilisateur
+                await db.execute('''
+                    CREATE TABLE IF NOT EXISTS tag_stats (
+                        guild_id INTEGER NOT NULL,
+                        date TEXT NOT NULL,
+                        tagged_count INTEGER NOT NULL,
+                        member_count INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (guild_id, date)
                     )
                 ''')
                 await db.commit()
@@ -76,10 +89,38 @@ class DatabaseManager:
             await db.commit()
     
     async def delete_guild_config(self, guild_id: int):
-        """Delete configuration for a specific guild"""
+        """Delete configuration and statistics for a specific guild"""
         async with self.get_db() as db:
             await db.execute('DELETE FROM guild_configs WHERE guild_id = ?', (guild_id,))
+            await db.execute('DELETE FROM tag_stats WHERE guild_id = ?', (guild_id,))
             await db.commit()
+
+    async def record_tag_stat(self, guild_id: int, tagged_count: int, member_count: int):
+        """Record today's aggregated counters for a guild (one row per guild per day)"""
+        async with self.get_db() as db:
+            await db.execute('''
+                INSERT OR REPLACE INTO tag_stats (guild_id, date, tagged_count, member_count)
+                VALUES (?, date('now'), ?, ?)
+            ''', (guild_id, tagged_count, member_count))
+            # Purge au fil de l'eau pour borner l'espace disque
+            await db.execute(
+                "DELETE FROM tag_stats WHERE guild_id = ? AND date < date('now', ?)",
+                (guild_id, f'-{STATS_RETENTION_DAYS} days')
+            )
+            await db.commit()
+
+    async def get_tag_stats(self, guild_id: int, days: int = 30) -> List[Dict]:
+        """Get daily aggregated counters for a guild, oldest first"""
+        async with self.get_db() as db:
+            async with db.execute(
+                "SELECT date, tagged_count, member_count FROM tag_stats "
+                "WHERE guild_id = ? AND date >= date('now', ?) ORDER BY date ASC",
+                (guild_id, f'-{days} days')
+            ) as cursor:
+                return [
+                    {'date': row[0], 'tagged': row[1], 'members': row[2]}
+                    async for row in cursor
+                ]
     
     async def get_all_enabled_configs(self) -> Dict[int, Dict]:
         """Get all enabled configurations (for monitoring)"""

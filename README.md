@@ -80,6 +80,8 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - **`/check <@membre>`** : Vérifie le statut du tag d'un membre spécifique
 
+- **`/stats`** : Évolution du nombre de membres avec le tag (7 jours, 30 jours, mini-graphe). Compteurs agrégés uniquement, aucun ID utilisateur stocké
+
 - **`/reset`** : Supprime la configuration et toutes les données stockées pour ce serveur
 
 - **`/botstats`** : Statistiques globales du bot (réservé au propriétaire du bot) : serveurs, membres, uptime, RAM, latence, taille de la base
@@ -100,6 +102,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 - `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
 - `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
 - `LOG_FILE` : Chemin du fichier de log (optionnel, défaut: `bot.log`, rotation automatique 5 Mo × 3). Mettre une valeur vide pour ne logger que sur stdout (recommandé sous Docker)
+- `CHUNK_ENABLED_GUILDS` : `true` (défaut) charge en cache la liste complète des membres des serveurs où la surveillance est **activée**, pour une détection temps réel complète même sur les gros serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache — avec beaucoup de très gros serveurs, augmentez la limite mémoire Docker (ex: 384M/512M) ou mettez `false` (la détection reposera alors sur le scan quotidien et `/scan` pour les gros serveurs)
 
 ### Base de données
 
@@ -214,8 +217,9 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 
 1. **Tags de serveur** : Le bot lit le tag "Primary Guild" (tag de serveur) affiché sur le profil, à côté du pseudo. L'utilisateur doit l'avoir activé publiquement
 2. **Performance** : Le bot réagit instantanément aux changements via les événements Discord, avec une vérification quotidienne de sécurité
-3. **Détection temps réel** : Elle dépend du cache des membres. Les gros serveurs (>250 membres) sont surtout couverts par le scan quotidien et `/scan` ; les petits serveurs bénéficient d'une détection instantanée complète
-4. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
+3. **Détection temps réel** : Par défaut (`CHUNK_ENABLED_GUILDS=true`), le bot met en cache les membres des serveurs surveillés pour une détection instantanée complète, même sur les gros serveurs. Avec `false`, les serveurs >250 membres sont surtout couverts par le scan quotidien et `/scan`
+4. **Langues** : Les commandes et réponses sont localisées en anglais, français, espagnol, allemand, italien et portugais (Brésil), selon la langue du client Discord de chaque utilisateur
+5. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
 
 ## 🐛 Dépannage
 
@@ -327,6 +331,8 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - **`/check <@member>`**: Check a specific member's tag status
 
+- **`/stats`**: Evolution of members with the tag (7 days, 30 days, mini-chart). Aggregated counters only, no user IDs stored
+
 - **`/reset`**: Delete the configuration and all stored data for this server
 
 - **`/botstats`**: Global bot statistics (bot owner only): servers, members, uptime, RAM, latency, database size
@@ -347,6 +353,7 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 - `DISCORD_TOKEN`: Discord bot token (required)
 - `LOG_LEVEL`: Logging level (optional, default: INFO). Possible values: DEBUG, INFO, WARNING, ERROR
 - `LOG_FILE`: Log file path (optional, default: `bot.log`, automatic rotation 5 MB × 3). Set to an empty value to log to stdout only (recommended with Docker)
+- `CHUNK_ENABLED_GUILDS`: `true` (default) caches the full member list of servers where monitoring is **enabled**, for complete real-time detection even on large servers (>250 members). Cost: ~1 KB of RAM per cached member — with many very large servers, raise the Docker memory limit (e.g. 384M/512M) or set `false` (large servers will then rely on the daily scan and `/scan`)
 
 ### Database
 
@@ -460,8 +467,9 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436
 
 1. **Server tags**: The bot reads the "Primary Guild" tag (server tag) displayed on the profile, next to the username. Users must have it publicly enabled
 2. **Performance**: The bot responds instantly to changes via Discord events, with a daily safety verification
-3. **Real-time detection**: It depends on the member cache. Large servers (>250 members) are mostly covered by the daily scan and `/scan`; small servers get full instant detection
-4. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
+3. **Real-time detection**: By default (`CHUNK_ENABLED_GUILDS=true`), the bot caches members of monitored servers for complete instant detection, even on large servers. With `false`, servers >250 members are mostly covered by the daily scan and `/scan`
+4. **Languages**: Commands and responses are localized in English, French, Spanish, German, Italian and Brazilian Portuguese, based on each user's Discord client language
+5. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
 
 ## 🐛 Troubleshooting
 

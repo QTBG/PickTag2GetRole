@@ -12,6 +12,9 @@ services:
       # Pas de fichier de log dans le conteneur : stdout suffit,
       # la rotation est gérée par Docker (voir section logging)
       - LOG_FILE=
+      # Cache complet des membres des serveurs surveillés (détection temps réel
+      # sur les gros serveurs). Mettre false pour économiser la RAM.
+      - CHUNK_ENABLED_GUILDS=${CHUNK_ENABLED_GUILDS:-true}
     volumes:
       # Monter le dossier de données pour la persistance
       - ./data:/app/data:rw

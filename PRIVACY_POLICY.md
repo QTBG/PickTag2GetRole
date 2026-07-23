@@ -8,6 +8,7 @@
 - **Tag Configuration**: The specific server tag you configure the bot to monitor
 - **Role Configuration**: The role IDs you configure to be assigned/removed
 - **Primary Guild Data**: User's primary server information (server ID, tag, and whether it's publicly displayed), processed in memory only
+- **Aggregated Statistics**: One daily counter per server (number of members displaying the configured tag, total member count) — numbers only, no user IDs
 
 ## Discord Gateway Intents
 The bot only subscribes to the minimum Discord gateway intents required to function:
@@ -35,7 +36,7 @@ The bot does **not** subscribe to message, reaction, typing, voice, or moderatio
 ## Data Storage
 - All data is stored locally in SQLite database files
 - Database location: `data/bot_data.db`
-- Only configuration data is persisted (guild_id, tag_to_watch, role_ids, enabled status)
+- Only configuration data (guild_id, tag_to_watch, role_ids, enabled status) and daily aggregated counters (tagged member count, total member count per server — no user IDs) are persisted
 - User data is only processed in memory for tag checking
 
 ## Your Rights
@@ -47,7 +48,8 @@ The bot does **not** subscribe to message, reaction, typing, voice, or moderatio
 
 ## Data Retention
 - Configuration data is kept as long as the bot remains in your server
-- When the bot is removed, all server data is automatically deleted
+- Aggregated daily statistics are kept for at most 365 days
+- When the bot is removed (or `/reset` is used), all server data — configuration and statistics — is automatically deleted
 - No user data is permanently stored
 
 ## Security

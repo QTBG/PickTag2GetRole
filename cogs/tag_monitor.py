@@ -2,14 +2,28 @@ from __future__ import annotations
 import discord
 from discord.ext import commands, tasks
 import asyncio
+import os
 from typing import Dict, Set, Optional, List
 import logging
 
 logger = logging.getLogger('PickTag2GetRole.TagMonitor')
 
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+# Charger en cache la liste complète des membres des serveurs où la surveillance
+# est activée ("chunking"). Nécessaire pour que les événements temps réel
+# (on_member_update / on_presence_update) couvrent tous les membres des gros
+# serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache.
+CHUNK_ENABLED_GUILDS = _env_flag('CHUNK_ENABLED_GUILDS', True)
+
 class TagMonitor(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.chunking_enabled = CHUNK_ENABLED_GUILDS
         self.member_cache: Dict[int, Set[int]] = {}  # guild_id -> member_ids ayant le tag (dernier scan)
         self._scan_locks: Dict[int, asyncio.Lock] = {}  # guild_id -> verrou anti-scans concurrents
         self._global_scan_lock = asyncio.Lock()
@@ -224,6 +238,16 @@ class TagMonitor(commands.Cog):
 
         return changed
 
+    async def ensure_chunked(self, guild: discord.Guild):
+        """Charger tous les membres du serveur en cache pour la détection temps réel"""
+        if not self.chunking_enabled or guild.chunked:
+            return
+        try:
+            await guild.chunk(cache=True)
+            logger.info("Chunked guild %s: %s members cached", guild.id, len(guild.members))
+        except Exception as e:
+            logger.error("Error chunking guild %s: %s", guild.id, e)
+
     async def scan_guild(self, guild: discord.Guild, tag_to_watch: str,
                          role_ids: List[int]) -> Optional[Dict[str, int]]:
         """Scanner tous les membres d'un serveur et corriger les rôles.
@@ -235,11 +259,22 @@ class TagMonitor(commands.Cog):
             return None
 
         async with lock:
+            await self.ensure_chunked(guild)
+
+            async def iter_members():
+                if guild.chunked:
+                    # Cache complet : zéro appel REST
+                    for m in list(guild.members):
+                        yield m
+                else:
+                    async for m in guild.fetch_members(limit=None):
+                        yield m
+
             checked = 0
             updated = 0
             tagged: Set[int] = set()
 
-            async for member in guild.fetch_members(limit=None):
+            async for member in iter_members():
                 has_tag = self._member_has_tag(member, tag_to_watch)
                 if has_tag:
                     tagged.add(member.id)
@@ -252,6 +287,13 @@ class TagMonitor(commands.Cog):
                     await asyncio.sleep(0.1)
 
             self.member_cache[guild.id] = tagged
+
+            # Statistiques agrégées journalières (compteurs uniquement)
+            try:
+                await self.bot.db.record_tag_stat(guild.id, len(tagged), checked)
+            except Exception as e:
+                logger.error("Error recording stats for guild %s: %s", guild.id, e)
+
             return {'checked': checked, 'tagged': len(tagged), 'updated': updated}
 
     async def check_all_tags(self):
