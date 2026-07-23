@@ -37,6 +37,7 @@ The bot does **not** subscribe to message, reaction, typing, voice, or moderatio
 - All data is stored locally in SQLite database files
 - Database location: `data/bot_data.db`
 - Only configuration data (guild_id, tag_to_watch, role_ids, enabled status) and daily aggregated counters (tagged member count, total member count per server — no user IDs) are persisted
+- Automatic local backups of this database are kept in `data/backups/` (rotated daily, 7 files by default)
 - User data is only processed in memory for tag checking
 
 ## Your Rights
@@ -50,6 +51,7 @@ The bot does **not** subscribe to message, reaction, typing, voice, or moderatio
 - Configuration data is kept as long as the bot remains in your server
 - Aggregated daily statistics are kept for at most 365 days
 - When the bot is removed (or `/reset` is used), all server data — configuration and statistics — is automatically deleted
+- Deleted data may persist in local daily backups for up to 7 days before rotation removes it
 - No user data is permanently stored
 
 ## Security

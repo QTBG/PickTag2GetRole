@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 import time
 import logging
 from logging.handlers import RotatingFileHandler
+from datetime import datetime, timezone
 
 import asyncio
 from dotenv import load_dotenv
@@ -57,6 +58,15 @@ class PickTag2GetRole(commands.Bot):
         self.cache_lock = asyncio.Lock()
         self.synced = False
         self.start_time = time.monotonic()
+
+        # Sauvegardes quotidiennes de la base
+        self.backup_enabled = os.getenv('BACKUP_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+        try:
+            self.backup_keep = max(1, int(os.getenv('BACKUP_KEEP', '7')))
+        except ValueError:
+            self.backup_keep = 7
+        self.last_backup_at: Optional[datetime] = None
+        self.db_integrity: Optional[str] = None
         
     async def setup_hook(self):
         """Initialiser le bot"""
@@ -68,11 +78,37 @@ class PickTag2GetRole(commands.Bot):
         await self.load_configs_to_cache()
         await self.load_extension('cogs.tag_monitor')
         await self.load_extension('cogs.commands')
-        
+
         # Gestionnaire d'erreur simple pour les commandes en DM
         self.tree.on_error = self.on_app_command_error
-        
+
+        if self.backup_enabled:
+            self.daily_backup.start()
+        else:
+            logger.info("Database backups disabled (BACKUP_ENABLED=false)")
+
         logger.info(f"Bot ready! Connected as {self.user}")
+
+    @tasks.loop(hours=24)
+    async def daily_backup(self):
+        """Sauvegarde quotidienne de la base, précédée d'un contrôle d'intégrité"""
+        try:
+            result = await self.db.integrity_check()
+            self.db_integrity = result
+            if result != 'ok':
+                # Ne surtout pas écraser ni purger les sauvegardes saines existantes
+                logger.error(f"DATABASE INTEGRITY CHECK FAILED ({result}) — "
+                             f"skipping backup and rotation; restore from data/backups/")
+                return
+            path = await self.db.backup(keep=self.backup_keep)
+            self.last_backup_at = datetime.now(timezone.utc)
+            logger.info(f"Database backup written: {path} ({os.path.getsize(path) / 1024:.0f} KB)")
+        except Exception as e:
+            logger.error(f"Database backup failed: {e}")
+
+    @daily_backup.before_loop
+    async def before_daily_backup(self):
+        await self.wait_until_ready()
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         """Minimal error handler for slash commands"""

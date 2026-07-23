@@ -5,6 +5,7 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/backups/
 *.db-journal
 *.db-wal
 *.db-shm

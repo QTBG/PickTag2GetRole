@@ -505,6 +505,15 @@ class ConfigCommands(commands.Cog):
         except OSError:
             db_text = "n/a"
 
+        integrity = getattr(self.bot, 'db_integrity', None)
+        backup_at = getattr(self.bot, 'last_backup_at', None)
+        if not getattr(self.bot, 'backup_enabled', False):
+            backup_text = "disabled"
+        elif backup_at is not None:
+            backup_text = f"<t:{int(backup_at.timestamp())}:R>"
+        else:
+            backup_text = "not yet"
+
         embed = discord.Embed(
             title="📈 Bot statistics",
             color=discord.Color.blurple()
@@ -523,6 +532,8 @@ class ConfigCommands(commands.Cog):
         embed.add_field(name="Latency", value=latency_text, inline=True)
         embed.add_field(name="Memory (RSS)", value=f"{rss_mb:.1f} MB" if rss_mb is not None else "n/a", inline=True)
         embed.add_field(name="Database size", value=db_text, inline=True)
+        embed.add_field(name="DB integrity", value=integrity or "not checked yet", inline=True)
+        embed.add_field(name="Last backup", value=backup_text, inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)

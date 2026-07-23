@@ -103,6 +103,8 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 - `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
 - `LOG_FILE` : Chemin du fichier de log (optionnel, défaut: `bot.log`, rotation automatique 5 Mo × 3). Mettre une valeur vide pour ne logger que sur stdout (recommandé sous Docker)
 - `CHUNK_ENABLED_GUILDS` : `true` (défaut) charge en cache la liste complète des membres des serveurs où la surveillance est **activée**, pour une détection temps réel complète même sur les gros serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache — avec beaucoup de très gros serveurs, augmentez la limite mémoire Docker (ex: 384M/512M) ou mettez `false` (la détection reposera alors sur le scan quotidien et `/scan` pour les gros serveurs)
+- `BACKUP_ENABLED` : `true` (défaut) active la sauvegarde quotidienne de la base dans `data/backups/`
+- `BACKUP_KEEP` : Nombre de sauvegardes journalières conservées (défaut : 7)
 
 ### Base de données
 
@@ -115,6 +117,24 @@ Le bot utilise une base de données SQLite (`data/bot_data.db`) pour stocker les
 - Chaque serveur n'a accès qu'à ses propres données
 - Les données sont automatiquement supprimées quand le bot est retiré d'un serveur
 
+### Sauvegardes automatiques
+
+Le bot sauvegarde automatiquement sa base SQLite pour se protéger d'une corruption :
+
+- **Quand** : au démarrage puis toutes les 24 h
+- **Où** : `data/backups/bot_data-YYYYMMDD.db` (un fichier par jour, les `BACKUP_KEEP` plus récents conservés, 7 par défaut)
+- **Comment** : API de sauvegarde en ligne de SQLite — snapshot cohérent même pendant les écritures (un simple `cp` d'une base WAL active ne l'est pas), écriture atomique
+- **Contrôle d'intégrité** : `PRAGMA quick_check` avant chaque sauvegarde. En cas d'échec, le bot n'écrase **ni ne purge** les sauvegardes saines existantes et logge une erreur bien visible (visible aussi dans `/botstats`)
+
+**Restauration** :
+```bash
+docker compose down            # ou arrêter le bot
+cp data/backups/bot_data-YYYYMMDD.db data/bot_data.db
+rm -f data/bot_data.db-wal data/bot_data.db-shm
+docker compose up -d
+```
+
+⚠️ Ces sauvegardes restent sur le même disque que la base. Pour survivre à une panne disque du VPS, copiez-les régulièrement ailleurs (cron + `scp`/`rclone`) — elles ne pèsent que quelques Ko.
 
 ### Optimisations pour VPS léger
 
@@ -354,6 +374,8 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 - `LOG_LEVEL`: Logging level (optional, default: INFO). Possible values: DEBUG, INFO, WARNING, ERROR
 - `LOG_FILE`: Log file path (optional, default: `bot.log`, automatic rotation 5 MB × 3). Set to an empty value to log to stdout only (recommended with Docker)
 - `CHUNK_ENABLED_GUILDS`: `true` (default) caches the full member list of servers where monitoring is **enabled**, for complete real-time detection even on large servers (>250 members). Cost: ~1 KB of RAM per cached member — with many very large servers, raise the Docker memory limit (e.g. 384M/512M) or set `false` (large servers will then rely on the daily scan and `/scan`)
+- `BACKUP_ENABLED`: `true` (default) enables the daily database backup into `data/backups/`
+- `BACKUP_KEEP`: Number of daily backup files to keep (default: 7)
 
 ### Database
 
@@ -365,6 +387,25 @@ The bot uses an SQLite database (`data/bot_data.db`) to securely store configura
 **Security & Privacy**:
 - Each server only has access to its own data
 - Data is automatically deleted when the bot is removed from a server
+
+### Automatic Backups
+
+The bot automatically backs up its SQLite database to protect against corruption:
+
+- **When**: at startup, then every 24h
+- **Where**: `data/backups/bot_data-YYYYMMDD.db` (one file per day, the `BACKUP_KEEP` most recent kept, 7 by default)
+- **How**: SQLite's online backup API — a consistent snapshot even during writes (a plain `cp` of a live WAL database is not), atomic write
+- **Integrity check**: `PRAGMA quick_check` before every backup. On failure, the bot neither overwrites **nor rotates out** existing healthy backups, and logs a loud error (also visible in `/botstats`)
+
+**Restore**:
+```bash
+docker compose down            # or stop the bot
+cp data/backups/bot_data-YYYYMMDD.db data/bot_data.db
+rm -f data/bot_data.db-wal data/bot_data.db-shm
+docker compose up -d
+```
+
+⚠️ These backups live on the same disk as the database. To survive a VPS disk failure, copy them elsewhere regularly (cron + `scp`/`rclone`) — they only weigh a few KB.
 
 ### Optimizations for Lightweight VPS
 

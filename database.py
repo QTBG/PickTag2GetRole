@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import aiosqlite
 from contextlib import asynccontextmanager
@@ -121,6 +122,52 @@ class DatabaseManager:
                     {'date': row[0], 'tagged': row[1], 'members': row[2]}
                     async for row in cursor
                 ]
+
+    async def integrity_check(self) -> str:
+        """Run PRAGMA quick_check on the database ('ok' means healthy)"""
+        async with self.get_db() as db:
+            async with db.execute('PRAGMA quick_check') as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 'unknown'
+
+    async def backup(self, keep: int = 7) -> str:
+        """Write a consistent snapshot of the database, one file per UTC day.
+
+        Utilise l'API de sauvegarde en ligne de SQLite : le snapshot est cohérent
+        même si le bot écrit en même temps (un simple `cp` ne l'est pas, surtout
+        en mode WAL). Écriture atomique via un fichier temporaire, puis rotation :
+        seuls les `keep` fichiers les plus récents sont conservés.
+        """
+        backup_dir = os.path.join(os.path.dirname(self.db_path) or '.', 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        date_str = datetime.now(timezone.utc).strftime('%Y%m%d')
+        dest = os.path.join(backup_dir, f'bot_data-{date_str}.db')
+        tmp = dest + '.tmp'
+
+        try:
+            async with aiosqlite.connect(self.db_path) as src:
+                async with aiosqlite.connect(tmp) as dst:
+                    await src.backup(dst)
+            os.replace(tmp, dest)
+        finally:
+            try:
+                os.remove(tmp)
+            except FileNotFoundError:
+                pass
+
+        if keep > 0:
+            existing = sorted(
+                name for name in os.listdir(backup_dir)
+                if name.startswith('bot_data-') and name.endswith('.db')
+            )
+            for old_name in existing[:-keep]:
+                try:
+                    os.remove(os.path.join(backup_dir, old_name))
+                except OSError:
+                    pass
+
+        return dest
     
     async def get_all_enabled_configs(self) -> Dict[int, Dict]:
         """Get all enabled configurations (for monitoring)"""
