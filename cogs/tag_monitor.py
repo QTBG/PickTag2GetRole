@@ -6,7 +6,7 @@ import os
 from typing import Dict, Set, Optional, List
 import logging
 
-from tag_utils import is_unmatchable_tag
+from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_unmatchable_tag
 
 logger = logging.getLogger('PickTag2GetRole.TagMonitor')
 
@@ -77,11 +77,16 @@ class TagMonitor(commands.Cog):
         if is_unmatchable_tag(tag_to_watch):
             if guild_id not in self.invalid_tag_guilds:
                 self.invalid_tag_guilds.add(guild_id)
+                # Ne jamais logger la valeur du tag : c'est un champ libre qui peut
+                # contenir n'importe quoi (la policy promet « IDs only » dans les
+                # logs). L'admin voit la valeur via /status dans son serveur.
+                reason = ("a role mention" if is_role_mention(tag_to_watch)
+                          else f"{len(tag_to_watch)} characters (server tags are at "
+                               f"most {DISCORD_TAG_MAX_LENGTH})")
                 logger.warning(
-                    "Guild %s: configured tag %r can never match a server tag (mention, "
-                    "or longer than Discord's 4-character limit) — monitoring paused for "
-                    "this guild to avoid mass role removal",
-                    guild_id, tag_to_watch
+                    "Guild %s: configured tag is %s — it can never match a server tag; "
+                    "monitoring paused for this guild to avoid mass role removal",
+                    guild_id, reason
                 )
             return None
 
@@ -212,13 +217,16 @@ class TagMonitor(commands.Cog):
             if not pg.tag:
                 return False
 
-            logger.debug("Member %s: tag=%r vs looking_for=%r", member.id, pg.tag, tag)
-
-            # Comparaison exacte du tag (insensible à la casse)
-            if pg.tag.lower() == tag.lower():
-                return True
-            # Si le tag configuré contient un #, essayer une correspondance partielle
-            if '#' in tag and tag.lower() in pg.tag.lower():
+            # Comparaison exacte (insensible à la casse), ou partielle si le tag
+            # configuré contient un '#'
+            matched = (pg.tag.lower() == tag.lower()
+                       or ('#' in tag and tag.lower() in pg.tag.lower()))
+            # Valeurs volontairement absentes du log, même en DEBUG : le tag du
+            # membre est une donnée de profil et la policy promet « IDs only ».
+            # Pour comparer les valeurs, un admin utilise /check dans son serveur.
+            logger.debug("Member %s: displayed server tag %s the configured tag",
+                         member.id, "matches" if matched else "does not match")
+            if matched:
                 return True
 
         except Exception as e:
@@ -366,8 +374,8 @@ class TagMonitor(commands.Cog):
             return None
 
         if is_unmatchable_tag(tag_to_watch):
-            logger.warning("Guild %s: refusing to scan, configured tag %r can never match a server tag",
-                           guild.id, tag_to_watch)
+            logger.warning("Guild %s: refusing to scan, the configured tag can never match a server tag",
+                           guild.id)
             return None
 
         async with lock:
