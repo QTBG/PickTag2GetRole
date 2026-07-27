@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands, tasks
+import math
 import os
 import time
 import logging
@@ -67,6 +68,9 @@ class PickTag2GetRole(commands.Bot):
             self.backup_keep = 7
         self.last_backup_at: Optional[datetime] = None
         self.db_integrity: Optional[str] = None
+
+        # Fichier de heartbeat lu par le HEALTHCHECK Docker (Dokploy, docker ps...)
+        self.heartbeat_file = os.getenv('HEARTBEAT_FILE', '/tmp/picktag_heartbeat')
         
     async def setup_hook(self):
         """Initialiser le bot"""
@@ -87,7 +91,28 @@ class PickTag2GetRole(commands.Bot):
         else:
             logger.info("Database backups disabled (BACKUP_ENABLED=false)")
 
+        self.heartbeat.start()
+
         logger.info(f"Bot ready! Connected as {self.user}")
+
+    @tasks.loop(minutes=1)
+    async def heartbeat(self):
+        """Toucher le fichier de heartbeat tant que la gateway répond.
+
+        Si le process se fige ou perd la connexion Discord, le fichier cesse
+        d'être mis à jour et le HEALTHCHECK du conteneur passe en "unhealthy".
+        """
+        if self.is_closed() or not math.isfinite(self.latency):
+            return
+        try:
+            with open(self.heartbeat_file, 'w') as f:
+                f.write(str(int(time.time())))
+        except OSError as e:
+            logger.warning(f"Could not write heartbeat file: {e}")
+
+    @heartbeat.before_loop
+    async def before_heartbeat(self):
+        await self.wait_until_ready()
 
     @tasks.loop(hours=24)
     async def daily_backup(self):

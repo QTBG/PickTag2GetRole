@@ -1,7 +1,6 @@
 services:
   picktag2getrole:
     build: .
-    container_name: picktag2getrole
     restart: unless-stopped
     init: true
     security_opt:
@@ -15,18 +14,19 @@ services:
       # Cache complet des membres des serveurs surveillés (détection temps réel
       # sur les gros serveurs). Mettre false pour économiser la RAM.
       - CHUNK_ENABLED_GUILDS=${CHUNK_ENABLED_GUILDS:-true}
-      # Sauvegarde quotidienne de la base dans ./data/backups (7 jours conservés)
+      # Sauvegarde quotidienne de la base dans /app/data/backups (7 jours conservés)
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_KEEP=${BACKUP_KEEP:-7}
     volumes:
-      # Monter le dossier de données pour la persistance
-      - ./data:/app/data:rw
+      # Volume nommé : survit aux redéploiements (Dokploy, git pull, rebuild)
+      # et hérite automatiquement des permissions de l'utilisateur non-root.
+      - picktag_data:/app/data
     # Limiter les ressources pour un VPS léger
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '${CPU_LIMIT:-0.5}'
+          memory: ${MEMORY_LIMIT:-512M}
         reservations:
           memory: 128M
     logging:
@@ -34,3 +34,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  picktag_data:

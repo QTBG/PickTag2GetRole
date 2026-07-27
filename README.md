@@ -126,21 +126,27 @@ Le bot sauvegarde automatiquement sa base SQLite pour se protéger d'une corrupt
 - **Comment** : API de sauvegarde en ligne de SQLite — snapshot cohérent même pendant les écritures (un simple `cp` d'une base WAL active ne l'est pas), écriture atomique
 - **Contrôle d'intégrité** : `PRAGMA quick_check` avant chaque sauvegarde. En cas d'échec, le bot n'écrase **ni ne purge** les sauvegardes saines existantes et logge une erreur bien visible (visible aussi dans `/botstats`)
 
-**Restauration** :
+**Restauration** (le volume Docker `picktag_data` contient `bot_data.db` et `backups/`) :
 ```bash
-docker compose down            # ou arrêter le bot
-cp data/backups/bot_data-YYYYMMDD.db data/bot_data.db
-rm -f data/bot_data.db-wal data/bot_data.db-shm
-docker compose up -d
+docker compose down                                            # ou arrêter l'app dans Dokploy
+VOL=$(docker volume ls -q | grep picktag_data | head -1)
+MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL")
+sudo cp "$MP/backups/bot_data-AAAAMMJJ.db" "$MP/bot_data.db"
+sudo rm -f "$MP/bot_data.db-wal" "$MP/bot_data.db-shm"
+sudo chown -R 1000:1000 "$MP"
+docker compose up -d                                           # ou redéployer dans Dokploy
 ```
 
-⚠️ Ces sauvegardes restent sur le même disque que la base. Pour survivre à une panne disque du VPS, copiez-les régulièrement ailleurs (cron + `scp`/`rclone`) — elles ne pèsent que quelques Ko.
+⚠️ Ces sauvegardes restent sur le même disque que la base. Pour survivre à une panne disque du VPS, copiez-les régulièrement ailleurs (cron + `scp`/`rclone`) — elles ne pèsent que quelques Ko :
+```bash
+0 5 * * * rsync -a "$(docker volume inspect -f '{{.Mountpoint}}' picktag_data)/backups/" user@autre-machine:~/picktag-backups/
+```
 
 ### Optimisations pour VPS léger
 
 Le bot est optimisé pour :
-- Utiliser minimum de RAM (limite Docker : 256MB)
-- Utiliser peu de CPU (limite Docker : 0.5 CPU)
+- Utiliser peu de RAM (limite Docker par défaut : 512MB, ajustable via `MEMORY_LIMIT`)
+- Utiliser peu de CPU (limite Docker : 0.5 CPU, ajustable via `CPU_LIMIT`)
 - Désactiver les intents Discord non nécessaires
 - Utiliser des événements plutôt que du polling constant
 - Traiter les membres par batch avec des pauses
@@ -184,10 +190,28 @@ docker logs picktag2getrole
 
 ### ⚠️ Migration depuis une ancienne version (conteneur root)
 
-Le conteneur tourne désormais avec un utilisateur non-root (UID 1000) pour plus de sécurité. Si votre dossier `data/` a été créé par une ancienne version (root), corrigez ses permissions une seule fois :
+Le conteneur tourne désormais avec un utilisateur non-root (UID 1000) pour plus de sécurité. Si vous montez un dossier de l'hôte créé par une ancienne version (root), corrigez ses permissions une seule fois :
 ```bash
 sudo chown -R 1000:1000 ./data
 ```
+Avec le volume nommé `picktag_data` (configuration par défaut), rien à faire : le volume hérite automatiquement du bon propriétaire à sa création.
+
+## 🚀 Déploiement avec Dokploy
+
+Le `docker-compose.yml` du dépôt fonctionne tel quel avec Dokploy.
+
+1. **Créer l'application** : *Create Service* → **Compose** → Provider **GitHub/Git**, dépôt `QTBG/PickTag2GetRole`, branche `main`, Compose Path `./docker-compose.yml`, Compose Type **Docker Compose**
+2. **Environnement** : onglet *Environment*, coller au minimum :
+   ```
+   DISCORD_TOKEN=votre_token
+   ```
+   (toutes les autres variables ont des valeurs par défaut — voir `.env.example`)
+3. **Déployer** : bouton *Deploy*. Le volume nommé `picktag_data` est créé automatiquement et **persiste entre les déploiements**
+4. **Vérifier** : les logs doivent afficher `Bot connected as ...`, et `/botstats` sur Discord donne l'état complet (RAM, intégrité de la base, dernière sauvegarde)
+
+**Migrer une base existante vers Dokploy** : voir la procédure de transfert dans la section *Sauvegardes automatiques* ci-dessus (même principe : copier le fichier `.db` dans le mountpoint du volume, puis `chown -R 1000:1000`).
+
+⚠️ **Ne pas utiliser de bind mount relatif** (`./data:/app/data`) avec Dokploy : le dossier du code est recréé à chaque déploiement, la base serait perdue. Le volume nommé du dépôt évite ce piège.
 
 ## 🔑 Obtenir le token du bot
 
@@ -397,21 +421,27 @@ The bot automatically backs up its SQLite database to protect against corruption
 - **How**: SQLite's online backup API — a consistent snapshot even during writes (a plain `cp` of a live WAL database is not), atomic write
 - **Integrity check**: `PRAGMA quick_check` before every backup. On failure, the bot neither overwrites **nor rotates out** existing healthy backups, and logs a loud error (also visible in `/botstats`)
 
-**Restore**:
+**Restore** (the `picktag_data` Docker volume holds `bot_data.db` and `backups/`):
 ```bash
-docker compose down            # or stop the bot
-cp data/backups/bot_data-YYYYMMDD.db data/bot_data.db
-rm -f data/bot_data.db-wal data/bot_data.db-shm
-docker compose up -d
+docker compose down                                            # or stop the app in Dokploy
+VOL=$(docker volume ls -q | grep picktag_data | head -1)
+MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL")
+sudo cp "$MP/backups/bot_data-YYYYMMDD.db" "$MP/bot_data.db"
+sudo rm -f "$MP/bot_data.db-wal" "$MP/bot_data.db-shm"
+sudo chown -R 1000:1000 "$MP"
+docker compose up -d                                           # or redeploy in Dokploy
 ```
 
-⚠️ These backups live on the same disk as the database. To survive a VPS disk failure, copy them elsewhere regularly (cron + `scp`/`rclone`) — they only weigh a few KB.
+⚠️ These backups live on the same disk as the database. To survive a VPS disk failure, copy them elsewhere regularly (cron + `scp`/`rclone`) — they only weigh a few KB:
+```bash
+0 5 * * * rsync -a "$(docker volume inspect -f '{{.Mountpoint}}' picktag_data)/backups/" user@other-machine:~/picktag-backups/
+```
 
 ### Optimizations for Lightweight VPS
 
 The bot is optimized to:
-- Use minimum RAM (Docker limit: 256MB)
-- Use low CPU (Docker limit: 0.5 CPU)
+- Use little RAM (default Docker limit: 512MB, tunable via `MEMORY_LIMIT`)
+- Use low CPU (Docker limit: 0.5 CPU, tunable via `CPU_LIMIT`)
 - Disable unnecessary Discord intents
 - Use events rather than constant polling
 - Process members in batches with pauses
@@ -455,10 +485,28 @@ docker logs picktag2getrole
 
 ### ⚠️ Migrating from an older version (root container)
 
-The container now runs as a non-root user (UID 1000) for better security. If your `data/` folder was created by an older (root) version, fix its permissions once:
+The container now runs as a non-root user (UID 1000) for better security. If you mount a host folder created by an older (root) version, fix its permissions once:
 ```bash
 sudo chown -R 1000:1000 ./data
 ```
+With the named volume `picktag_data` (default setup), nothing to do: the volume automatically inherits the correct owner when created.
+
+## 🚀 Deploying with Dokploy
+
+The repository's `docker-compose.yml` works as-is with Dokploy.
+
+1. **Create the application**: *Create Service* → **Compose** → Provider **GitHub/Git**, repository `QTBG/PickTag2GetRole`, branch `main`, Compose Path `./docker-compose.yml`, Compose Type **Docker Compose**
+2. **Environment**: in the *Environment* tab, paste at minimum:
+   ```
+   DISCORD_TOKEN=your_token
+   ```
+   (every other variable has a default — see `.env.example`)
+3. **Deploy**: hit *Deploy*. The named volume `picktag_data` is created automatically and **persists across deployments**
+4. **Verify**: logs should show `Bot connected as ...`, and `/botstats` on Discord reports full status (RAM, database integrity, last backup)
+
+**Migrating an existing database to Dokploy**: see the transfer procedure in the *Automatic Backups* section above (same idea: copy the `.db` file into the volume mountpoint, then `chown -R 1000:1000`).
+
+⚠️ **Do not use a relative bind mount** (`./data:/app/data`) with Dokploy: the code directory is recreated on every deployment, so the database would be lost. The repository's named volume avoids this pitfall.
 
 ## 🔑 Getting the Bot Token
 
