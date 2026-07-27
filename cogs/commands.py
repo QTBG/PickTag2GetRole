@@ -8,6 +8,7 @@ import re
 import time
 from datetime import date, datetime, timedelta, timezone
 
+from crypto import EncryptionKeyError
 from database import STATS_RETENTION_DAYS
 from i18n import t
 from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_unmatchable_tag
@@ -19,7 +20,6 @@ PRIVACY_POLICY_URL = f'{REPO_URL}/blob/main/PRIVACY_POLICY.md'
 TERMS_URL = f'{REPO_URL}/blob/main/TERMS_OF_SERVICE.md'
 
 ROLE_MENTION_RE = re.compile(r'<@&(\d+)>')
-MAX_TAG_LENGTH = 32
 MAX_ROLES = 15
 SPARK_BLOCKS = '▁▂▃▄▅▆▇█'
 
@@ -58,9 +58,9 @@ class ConfigCommands(commands.Cog):
         """Configure the tag to monitor and roles to assign"""
         locale = interaction.locale
         tag = tag.strip()
-        if not tag or len(tag) > MAX_TAG_LENGTH:
+        if not tag:
             await interaction.response.send_message(
-                t(locale, 'config.invalid_tag', max=MAX_TAG_LENGTH),
+                t(locale, 'config.invalid_tag', max=DISCORD_TAG_MAX_LENGTH),
                 ephemeral=True
             )
             return
@@ -181,7 +181,14 @@ class ConfigCommands(commands.Cog):
     async def reset(self, interaction: discord.Interaction):
         """Delete all stored data for this server"""
         locale = interaction.locale
-        config = await self.bot.get_guild_config(interaction.guild.id)
+        try:
+            config = await self.bot.get_guild_config(interaction.guild.id)
+        except (EncryptionKeyError, ValueError, TypeError):
+            # Ligne illisible (clé changée, jeton corrompu) ou au JSON cassé :
+            # la suppression, elle, n'a besoin ni de déchiffrer ni de parser.
+            # /reset doit rester la porte de sortie — la privacy policy promet
+            # une suppression immédiate.
+            config = True
 
         if not config:
             await interaction.response.send_message(

@@ -62,6 +62,59 @@ class DatabaseManager:
             await self._ensure_key_matches()
             await self._encrypt_existing_rows()
             await self._encrypt_backup_files()
+        # Hygiène non critique : ne jamais empêcher le démarrage pour ça
+        try:
+            await self._sweep_backup_tmp()
+            await self.purge_expired_stats()
+        except Exception as e:
+            logger.error("Non-fatal maintenance error at startup: %s", e)
+
+    async def _sweep_backup_tmp(self):
+        """Supprimer les fichiers temporaires de sauvegarde orphelins.
+
+        backup() écrit un .tmp puis le renomme ; un conteneur tué en pleine
+        copie (redéploiement Dokploy, OOM) peut le laisser derrière lui. Un
+        .tmp échappe au filtre *.db du chiffrement des sauvegardes ET de la
+        rotation : il garderait les données en clair indéfiniment. backup()
+        étant le seul écrivain et séquentiel, tout .tmp rencontré ici est
+        orphelin.
+        """
+        backup_dir = os.path.join(os.path.dirname(self.db_path) or '.', 'backups')
+        if not os.path.isdir(backup_dir):
+            return
+        for name in os.listdir(backup_dir):
+            if name.endswith('.db.tmp'):
+                try:
+                    os.remove(os.path.join(backup_dir, name))
+                    logger.info("Removed orphaned backup temp file: %s", name)
+                except OSError as e:
+                    logger.warning("Could not remove orphaned temp file %s: %s", name, e)
+
+    async def purge_expired_stats(self):
+        """Purge globale des statistiques au-delà de la rétention promise.
+
+        record_tag_stat purge déjà au fil de l'eau, mais uniquement pour les
+        serveurs activement scannés : un serveur désactivé (/toggle) ou en
+        pause garderait ses compteurs au-delà des 365 jours annoncés par la
+        politique de confidentialité.
+        """
+        async with self.get_db() as db:
+            cur = await db.execute(
+                "DELETE FROM tag_stats WHERE date < date('now', ?)",
+                (f'-{STATS_RETENTION_DAYS} days',)
+            )
+            await db.commit()
+            if cur.rowcount:
+                logger.info("Purged %s stat row(s) older than %s days",
+                            cur.rowcount, STATS_RETENTION_DAYS)
+
+    async def get_all_guild_ids(self) -> List[int]:
+        """Tous les guild_id présents en base (configurations et statistiques)."""
+        async with self.get_db() as db:
+            async with db.execute(
+                'SELECT guild_id FROM guild_configs UNION SELECT guild_id FROM tag_stats'
+            ) as cursor:
+                return [row[0] async for row in cursor]
 
     async def _ensure_key_matches(self):
         """Refuser de continuer si la clé ne déchiffre aucune valeur déjà chiffrée.
@@ -128,6 +181,17 @@ class DatabaseManager:
             if migrated:
                 await db.commit()
                 logger.info("Encryption at rest: migrated %s plaintext row(s)", migrated)
+            # VACUUM systématique : la migration en place (celle-ci ou une
+            # précédente) laisse les anciennes valeurs en clair dans les pages
+            # libres du fichier, récupérables sans la clé par simple carving.
+            # VACUUM réécrit le fichier sans ces résidus ; quelques ms sur une
+            # base de cette taille. Non fatal : sur disque plein (VACUUM copie
+            # la base), mieux vaut démarrer sans purger les résidus que
+            # crash-looper — retentera au prochain démarrage.
+            try:
+                await db.execute('VACUUM')
+            except Exception as e:
+                logger.warning("VACUUM failed (non-fatal, will retry next start): %s", e)
 
     async def _encrypt_backup_files(self):
         """Appliquer la même migration aux sauvegardes existantes.
@@ -152,6 +216,9 @@ class DatabaseManager:
                         await db.commit()
                         logger.info("Encryption at rest: migrated %s plaintext row(s) in backup %s",
                                     migrated, name)
+                    # Même raison que pour la base principale : purger les
+                    # résidus en clair des pages libres du fichier
+                    await db.execute('VACUUM')
             except Exception as e:
                 logger.error("Could not encrypt backup %s: %s", name, e)
     
@@ -160,6 +227,9 @@ class DatabaseManager:
         """Get a database connection"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute('PRAGMA busy_timeout=5000')
+            # Écraser physiquement les données supprimées ou remplacées :
+            # /reset et la purge des stats promettent une vraie suppression
+            await db.execute('PRAGMA secure_delete=ON')
             yield db
     
     async def get_guild_config(self, guild_id: int) -> Optional[Dict]:
@@ -255,6 +325,9 @@ class DatabaseManager:
         """
         backup_dir = os.path.join(os.path.dirname(self.db_path) or '.', 'backups')
         os.makedirs(backup_dir, exist_ok=True)
+        # Nettoyer un éventuel .tmp orphelin d'une exécution tuée en route
+        # (couvre aussi les conteneurs qui tournent plusieurs jours sans redémarrer)
+        await self._sweep_backup_tmp()
 
         date_str = datetime.now(timezone.utc).strftime('%Y%m%d')
         dest = os.path.join(backup_dir, f'bot_data-{date_str}.db')

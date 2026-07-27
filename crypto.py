@@ -96,9 +96,15 @@ class FieldCipher:
         return self.encrypt(str(int(value)))
 
     def decrypt_int(self, value, default: int = 0) -> int:
+        """Déchiffrer un compteur ; toute valeur illisible dégrade à `default`.
+
+        EncryptionKeyError inclus : un compteur de statistique corrompu doit
+        s'afficher à 0, pas casser /stats pendant 30 jours — /config ne réécrit
+        jamais tag_stats, aucune commande ne pourrait donc réparer la ligne.
+        """
         if value is None:
             return default
         try:
             return int(self.decrypt(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, EncryptionKeyError):
             return default

@@ -315,10 +315,11 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 ### « monitoring paused for this guild » dans les logs
 
 ```
-Guild 123...: configured tag '<@&456...>' can never match a server tag (mention,
-or longer than Discord's 4-character limit) — monitoring paused for this guild
-to avoid mass role removal
+Guild 123...: configured tag is a role mention — it can never match a server tag;
+monitoring paused for this guild to avoid mass role removal
 ```
+
+(ou `configured tag is 26 characters (server tags are at most 4)` selon le cas — la valeur elle-même n'apparaît jamais dans les logs.)
 
 Une valeur impossible à satisfaire a été enregistrée dans le champ `tag` : une mention de rôle collée, ou un tag de plus de 4 caractères (la limite des tags de serveur Discord). Une telle valeur ne peut correspondre à aucun membre : sans garde-fou, le bot en conclurait que plus personne ne porte le tag et retirerait les rôles à tout le serveur. Il met donc la surveillance en pause et **ne touche à aucun rôle** jusqu'à correction.
 
@@ -333,7 +334,7 @@ below the configured roles, or I lack Manage Roles
 
 - Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer (Paramètres du serveur → Rôles, glisser le rôle du bot au-dessus)
 - Vérifier que le bot a la permission "Manage Roles"
-- `/status` indique combien de membres n'ont pas pu être mis à jour lors du dernier scan
+- `/status` indique combien de membres distincts n'ont pas pu être mis à jour depuis le dernier scan (scan et événements temps réel compris)
 - Le message n'apparaît qu'une fois par serveur et par scan, pas une ligne par membre
 
 ### Utilisation CPU/RAM élevée
@@ -669,10 +670,11 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436
 ### "monitoring paused for this guild" in the logs
 
 ```
-Guild 123...: configured tag '<@&456...>' can never match a server tag (mention,
-or longer than Discord's 4-character limit) — monitoring paused for this guild
-to avoid mass role removal
+Guild 123...: configured tag is a role mention — it can never match a server tag;
+monitoring paused for this guild to avoid mass role removal
 ```
+
+(or `configured tag is 26 characters (server tags are at most 4)` depending on the case — the value itself never appears in the logs.)
 
 An impossible-to-satisfy value was stored in the `tag` field: a pasted role mention, or a tag longer than 4 characters (Discord's server tag limit). Such a value can never match any member: without a safeguard, the bot would conclude nobody carries the tag anymore and strip the roles from the whole server. It therefore pauses monitoring and **touches no role at all** until the configuration is fixed.
 
@@ -687,7 +689,7 @@ below the configured roles, or I lack Manage Roles
 
 - The bot must have a role higher than the roles it's trying to assign (Server Settings → Roles, drag the bot's role above them)
 - Check that the bot has the "Manage Roles" permission
-- `/status` reports how many members could not be updated during the last scan
+- `/status` reports how many distinct members could not be updated since the last scan (scan and real-time events included)
 - The message appears once per server per scan, not one line per member
 
 ### High CPU/RAM usage
