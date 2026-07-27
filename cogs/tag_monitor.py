@@ -220,11 +220,46 @@ class TagMonitor(commands.Cog):
 
         return False
 
+    def _manageable_roles(self, guild: discord.Guild, role_ids: List[int]) -> Set[int]:
+        """IDs des rôles configurés que le bot peut réellement modifier.
+
+        Trois causes de refus, toutes lisibles depuis le cache sans appel API :
+        permission Manage Roles absente, rôle situé au-dessus du bot dans la
+        hiérarchie, rôle géré par une intégration ou par le boost serveur
+        (Discord refuse toujours de l'attribuer à la main).
+
+        Les filtrer évite d'envoyer des requêtes dont l'échec est certain : un
+        403 consomme le rate limit de Discord comme un succès, soit environ une
+        seconde par membre sur un serveur mal configuré.
+        """
+        me = guild.me
+        if me is None or not me.guild_permissions.manage_roles:
+            return set()
+
+        top = me.top_role
+        writable = set()
+        for role_id in role_ids:
+            role = guild.get_role(role_id)
+            if role and not role.managed and role < top:
+                writable.add(role_id)
+        return writable
+
     async def _update_member_roles(self, member: discord.Member, should_have_roles: bool,
-                                   role_ids: List[int]) -> bool:
-        """Mettre à jour les rôles d'un membre. Retourne True si quelque chose a changé."""
+                                   role_ids: List[int],
+                                   writable_ids: Optional[Set[int]] = None) -> bool:
+        """Mettre à jour les rôles d'un membre. Retourne True si quelque chose a changé.
+
+        `writable_ids` est le sous-ensemble de `role_ids` que le bot peut modifier,
+        calculé une seule fois par scan. Un rôle qui devrait changer mais n'y figure
+        pas est comptabilisé comme bloqué sans qu'aucune requête ne soit envoyée.
+        None (chemin des listeners temps réel) le fait résoudre à la volée.
+        """
+        if writable_ids is None:
+            writable_ids = self._manageable_roles(member.guild, role_ids)
+
         roles_to_add = []
         roles_to_remove = []
+        blocked = False
 
         for role_id in role_ids:
             role = member.guild.get_role(role_id)
@@ -234,12 +269,24 @@ class TagMonitor(commands.Cog):
             has_role = role in member.roles
 
             if should_have_roles and not has_role:
-                roles_to_add.append(role)
+                if role_id in writable_ids:
+                    roles_to_add.append(role)
+                else:
+                    blocked = True
             elif not should_have_roles and has_role:
-                roles_to_remove.append(role)
+                if role_id in writable_ids:
+                    roles_to_remove.append(role)
+                else:
+                    blocked = True
+
+        # Changement nécessaire sur un rôle non modifiable : on le comptabilise
+        # pour /status, mais sans appeler l'API puisque la requête échouerait
+        if blocked:
+            self._note_permission_issue(member.guild.id)
 
         changed = False
-        # Un seul appel API pour tous les ajouts, un seul pour tous les retraits
+        # discord.py envoie une requête par rôle (add_roles/remove_roles sont
+        # atomiques par défaut), et non une seule pour la liste entière
         if roles_to_add:
             try:
                 await member.add_roles(*roles_to_add, reason="Server tag detected")
@@ -303,6 +350,10 @@ class TagMonitor(commands.Cog):
             self.permission_issues.pop(guild.id, None)
             await self.ensure_chunked(guild)
 
+            # Une seule fois pour tout le serveur : la hiérarchie des rôles et la
+            # permission du bot ne changent pas d'un membre à l'autre
+            writable_ids = self._manageable_roles(guild, role_ids)
+
             async def iter_members():
                 if guild.chunked:
                     # Cache complet : zéro appel REST
@@ -320,13 +371,15 @@ class TagMonitor(commands.Cog):
                 has_tag = self._member_has_tag(member, tag_to_watch)
                 if has_tag:
                     tagged.add(member.id)
-                if await self._update_member_roles(member, has_tag, role_ids):
+                if await self._update_member_roles(member, has_tag, role_ids, writable_ids):
                     updated += 1
 
                 checked += 1
-                # Petite pause toutes les 10 vérifications pour lisser la charge
-                if checked % 10 == 0:
-                    await asyncio.sleep(0.1)
+                # Céder la main à la boucle d'événements sans temporiser. La
+                # vérification d'un membre en cache est du calcul mémoire : quand
+                # rien ne change — le cas dominant — il n'y a aucun trafic API à
+                # lisser, et les écritures sont déjà limitées par discord.py.
+                await asyncio.sleep(0)
 
             self.member_cache[guild.id] = tagged
 
