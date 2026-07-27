@@ -14,6 +14,10 @@ from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_suspiciously_l
 
 logger = logging.getLogger('PickTag2GetRole.Commands')
 
+REPO_URL = 'https://github.com/QTBG/PickTag2GetRole'
+PRIVACY_POLICY_URL = f'{REPO_URL}/blob/main/PRIVACY_POLICY.md'
+TERMS_URL = f'{REPO_URL}/blob/main/TERMS_OF_SERVICE.md'
+
 ROLE_MENTION_RE = re.compile(r'<@&(\d+)>')
 MAX_TAG_LENGTH = 32
 MAX_ROLES = 15
@@ -323,6 +327,16 @@ class ConfigCommands(commands.Cog):
         embed.add_field(name="/stats", value=t(locale, 'help.stats'), inline=False)
         embed.add_field(name="/reset", value=t(locale, 'help.reset'), inline=False)
         embed.add_field(name="/help", value=t(locale, 'help.help'), inline=False)
+
+        # Politique de confidentialité accessible sans quitter Discord
+        embed.add_field(
+            name=t(locale, 'help.legal_field'),
+            value=(
+                f"[{t(locale, 'help.privacy_link')}]({PRIVACY_POLICY_URL}) • "
+                f"[{t(locale, 'help.terms_link')}]({TERMS_URL})"
+            ),
+            inline=False
+        )
 
         embed.set_footer(text=t(locale, 'help.footer'))
 
