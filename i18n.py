@@ -229,27 +229,31 @@ RESPONSES: dict[str, dict[str, str]] = {
                  "lado dos nomes — enquanto os cargos vão no campo `roles`.\n\n"
                  "Exemplo: `/config tag:VIP roles:@Membro-VIP`",
     },
-    'config.tag_long_warning_field': {
-        'en': "⚠️ This tag looks too long",
-        'fr': "⚠️ Ce tag semble trop long",
-        'es': "⚠️ Esta etiqueta parece demasiado larga",
-        'de': "⚠️ Dieser Tag wirkt zu lang",
-        'it': "⚠️ Questo tag sembra troppo lungo",
-        'pt-BR': "⚠️ Esta tag parece longa demais",
-    },
-    'config.tag_long_warning_text': {
-        'en': "Discord server tags are at most {max} characters. Yours is {length}, so it may never "
-              "match anyone. Double-check it with `/check @member`.",
-        'fr': "Les tags de serveur Discord font au maximum {max} caractères. Le vôtre en fait {length}, "
-              "il risque de ne jamais correspondre. Vérifiez-le avec `/check @membre`.",
-        'es': "Las etiquetas de servidor de Discord tienen como máximo {max} caracteres. La tuya tiene "
-              "{length}, así que puede que nunca coincida. Compruébalo con `/check @miembro`.",
-        'de': "Discord-Server-Tags haben höchstens {max} Zeichen. Deiner hat {length} und passt "
-              "möglicherweise nie. Prüfe ihn mit `/check @Mitglied`.",
-        'it': "I tag del server Discord hanno al massimo {max} caratteri. Il tuo ne ha {length}, quindi "
-              "potrebbe non corrispondere mai. Verificalo con `/check @membro`.",
-        'pt-BR': "As tags de servidor do Discord têm no máximo {max} caracteres. A sua tem {length}, "
-                 "então pode nunca corresponder. Confira com `/check @membro`.",
+    'config.tag_too_long': {
+        'en': "❌ This tag is {length} characters long, but Discord server tags are at most {max}. "
+              "It can never match anyone — monitoring would strip the configured roles from the "
+              "whole server.\n\nUse the short TAG shown next to member names. "
+              "Example: `/config tag:VIP roles:@VIP-Member`",
+        'fr': "❌ Ce tag fait {length} caractères, mais un tag de serveur Discord en fait au maximum "
+              "{max}. Il ne peut correspondre à personne — la surveillance retirerait les rôles "
+              "configurés à tout le serveur.\n\nUtilisez le TAG court affiché à côté des pseudos. "
+              "Exemple : `/config tag:VIP roles:@Membre-VIP`",
+        'es': "❌ Esta etiqueta tiene {length} caracteres, pero las etiquetas de servidor de Discord "
+              "tienen como máximo {max}. Nunca podría coincidir con nadie — la supervisión quitaría "
+              "los roles configurados a todo el servidor.\n\nUsa la ETIQUETA corta que aparece junto "
+              "a los nombres. Ejemplo: `/config tag:VIP roles:@Miembro-VIP`",
+        'de': "❌ Dieser Tag ist {length} Zeichen lang, aber Discord-Server-Tags haben höchstens "
+              "{max}. Er kann nie passen — die Überwachung würde dem ganzen Server die "
+              "konfigurierten Rollen entziehen.\n\nVerwende den kurzen TAG neben den "
+              "Mitgliedsnamen. Beispiel: `/config tag:VIP roles:@VIP-Mitglied`",
+        'it': "❌ Questo tag è lungo {length} caratteri, ma i tag del server Discord ne hanno al "
+              "massimo {max}. Non può corrispondere a nessuno — il monitoraggio rimuoverebbe i "
+              "ruoli configurati a tutto il server.\n\nUsa il TAG breve mostrato accanto ai nomi. "
+              "Esempio: `/config tag:VIP roles:@Membro-VIP`",
+        'pt-BR': "❌ Esta tag tem {length} caracteres, mas as tags de servidor do Discord têm no "
+                 "máximo {max}. Ela nunca poderia corresponder a ninguém — o monitoramento removeria "
+                 "os cargos configurados do servidor inteiro.\n\nUse a TAG curta exibida ao lado dos "
+                 "nomes. Exemplo: `/config tag:VIP roles:@Membro-VIP`",
     },
     'status.invalid_tag_field': {
         'en': "🚫 Invalid tag — monitoring paused",
@@ -260,18 +264,24 @@ RESPONSES: dict[str, dict[str, str]] = {
         'pt-BR': "🚫 Tag inválida — monitoramento pausado",
     },
     'status.invalid_tag_text': {
-        'en': "The configured tag is a mention, not a server tag, so it can never match. The bot is "
-              "**not** touching any roles until you fix it with `/config`.",
-        'fr': "Le tag configuré est une mention, pas un tag de serveur : il ne peut jamais correspondre. "
-              "Le bot ne touche à **aucun** rôle tant que vous ne le corrigez pas avec `/config`.",
-        'es': "La etiqueta configurada es una mención, no una etiqueta de servidor, así que nunca puede "
-              "coincidir. El bot **no** toca ningún rol hasta que lo corrijas con `/config`.",
-        'de': "Der konfigurierte Tag ist eine Erwähnung und kein Server-Tag, er kann also nie passen. "
-              "Der Bot ändert **keine** Rollen, bis du das mit `/config` korrigierst.",
-        'it': "Il tag configurato è una menzione, non un tag del server, quindi non può mai corrispondere. "
-              "Il bot **non** tocca alcun ruolo finché non lo correggi con `/config`.",
-        'pt-BR': "A tag configurada é uma menção, não uma tag de servidor, então nunca vai corresponder. "
-                 "O bot **não** mexe em nenhum cargo até você corrigir com `/config`.",
+        'en': "The configured tag can never match a real server tag — it is a role mention, or longer "
+              "than the {max} characters Discord allows. The bot is **not** touching any roles until "
+              "you fix it with `/config`.",
+        'fr': "Le tag configuré ne peut correspondre à aucun tag de serveur réel — c'est une mention de "
+              "rôle, ou il dépasse les {max} caractères autorisés par Discord. Le bot ne touche à "
+              "**aucun** rôle tant que vous ne le corrigez pas avec `/config`.",
+        'es': "La etiqueta configurada nunca puede coincidir con una etiqueta de servidor real — es una "
+              "mención de rol, o supera los {max} caracteres que permite Discord. El bot **no** toca "
+              "ningún rol hasta que lo corrijas con `/config`.",
+        'de': "Der konfigurierte Tag kann nie einem echten Server-Tag entsprechen — er ist eine "
+              "Rollen-Erwähnung oder länger als die von Discord erlaubten {max} Zeichen. Der Bot "
+              "ändert **keine** Rollen, bis du das mit `/config` korrigierst.",
+        'it': "Il tag configurato non può mai corrispondere a un vero tag del server — è una menzione "
+              "di ruolo, o supera i {max} caratteri consentiti da Discord. Il bot **non** tocca alcun "
+              "ruolo finché non lo correggi con `/config`.",
+        'pt-BR': "A tag configurada nunca pode corresponder a uma tag de servidor real — é uma menção "
+                 "de cargo, ou passa dos {max} caracteres permitidos pelo Discord. O bot **não** mexe "
+                 "em nenhum cargo até você corrigir com `/config`.",
     },
     'status.permission_field': {
         'en': "⚠️ Missing permissions",

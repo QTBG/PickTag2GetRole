@@ -22,18 +22,17 @@ def is_role_mention(tag: str) -> bool:
 def is_unmatchable_tag(tag) -> bool:
     """True si la valeur ne peut correspondre à aucun tag de serveur réel.
 
+    Deux causes : une mention Discord collée dans le champ, ou une longueur
+    au-delà des 4 caractères d'un tag Discord. Pas d'exception pour les tags
+    contenant '#' : la correspondance partielle exige que le tag configuré soit
+    CONTENU dans celui du membre (4 caractères max), donc un tag configuré de
+    5+ caractères ne peut pas correspondre non plus par ce chemin.
+
     Utilisé à la configuration (pour refuser la saisie) et à l'exécution (pour
     neutraliser une configuration existante au lieu de retirer les rôles en masse).
     """
     if not tag:
         return True
-    return is_role_mention(tag)
-
-
-def is_suspiciously_long(tag: str) -> bool:
-    """True si le tag dépasse la longueur d'un tag de serveur Discord.
-
-    Les tags contenant '#' sont exclus : ils activent la correspondance partielle,
-    qui est un usage volontaire.
-    """
-    return bool(tag) and '#' not in tag and len(tag) > DISCORD_TAG_MAX_LENGTH
+    if is_role_mention(tag):
+        return True
+    return len(tag) > DISCORD_TAG_MAX_LENGTH

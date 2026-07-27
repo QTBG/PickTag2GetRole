@@ -71,9 +71,9 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - **`/config <tag> <@role1 @role2...>`** : Configure le tag à surveiller et les rôles à attribuer
   - Exemple : `/config tag:VIP roles:@Membre @VIP`
-  - ⚠️ Le champ `tag` attend le **tag de serveur** : les 2 à 4 caractères affichés à côté des pseudos. Ce n'est **pas** une mention de rôle — coller un `@Rôle` ici est l'erreur la plus fréquente, et elle est désormais refusée
-  - Un tag de plus de 4 caractères est accepté mais signalé : il ne correspondra probablement à personne
-  - Un tag contenant `#` active la correspondance partielle (usage volontaire, non concerné par la limite de longueur)
+  - ⚠️ Le champ `tag` attend le **tag de serveur** : les 2 à 4 caractères affichés à côté des pseudos. Ce n'est **pas** une mention de rôle — coller un `@Rôle` ici est l'erreur la plus fréquente, et elle est refusée
+  - Un tag de plus de 4 caractères est refusé : les tags de serveur Discord font 4 caractères maximum, il ne pourrait donc correspondre à personne
+  - Un tag contenant `#` active la correspondance partielle (usage volontaire)
   - Sécurité : impossible de configurer un rôle supérieur ou égal à votre rôle le plus élevé (ou à celui du bot)
   
 - **`/status`** : Affiche la configuration actuelle du bot et le nombre de membres ayant le tag. Signale aussi les deux pannes silencieuses : tag invalide (surveillance en pause) et permissions insuffisantes (nombre de membres qui n'ont pas pu être mis à jour)
@@ -315,11 +315,12 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 ### « monitoring paused for this guild » dans les logs
 
 ```
-Guild 123...: configured tag '<@&456...>' is a mention, not a server tag —
-monitoring paused for this guild to avoid mass role removal
+Guild 123...: configured tag '<@&456...>' can never match a server tag (mention,
+or longer than Discord's 4-character limit) — monitoring paused for this guild
+to avoid mass role removal
 ```
 
-Une mention de rôle a été enregistrée dans le champ `tag`. Une telle valeur ne peut correspondre à aucun membre : sans garde-fou, le bot en conclurait que plus personne ne porte le tag et retirerait les rôles à tout le serveur. Il met donc la surveillance en pause et **ne touche à aucun rôle** jusqu'à correction.
+Une valeur impossible à satisfaire a été enregistrée dans le champ `tag` : une mention de rôle collée, ou un tag de plus de 4 caractères (la limite des tags de serveur Discord). Une telle valeur ne peut correspondre à aucun membre : sans garde-fou, le bot en conclurait que plus personne ne porte le tag et retirerait les rôles à tout le serveur. Il met donc la surveillance en pause et **ne touche à aucun rôle** jusqu'à correction.
 
 **Correctif** : relancer `/config` avec le tag de serveur court (ex. `tag:VIP`) et laisser les rôles dans le champ `roles`. `/status` affiche l'alerte tant que la configuration est cassée.
 
@@ -424,9 +425,9 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - **`/config <tag> <@role1 @role2...>`**: Configure the tag to monitor and roles to assign
   - Example: `/config tag:VIP roles:@Member @VIP`
-  - ⚠️ The `tag` field expects the **server tag**: the 2-4 characters shown next to member names. It is **not** a role mention — pasting an `@Role` here is the most common mistake, and it is now rejected
-  - A tag longer than 4 characters is accepted but flagged: it most likely will never match anyone
-  - A tag containing `#` enables partial matching (an intentional use, exempt from the length limit)
+  - ⚠️ The `tag` field expects the **server tag**: the 2-4 characters shown next to member names. It is **not** a role mention — pasting an `@Role` here is the most common mistake, and it is rejected
+  - A tag longer than 4 characters is rejected: Discord server tags are 4 characters at most, so it could never match anyone
+  - A tag containing `#` enables partial matching (an intentional use)
   - Security: you cannot configure a role higher than or equal to your own highest role (or the bot's)
   
 - **`/status`**: Display current bot configuration and how many members have the tag. Also surfaces the two silent failure modes: invalid tag (monitoring paused) and missing permissions (how many members could not be updated)
@@ -668,11 +669,12 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436
 ### "monitoring paused for this guild" in the logs
 
 ```
-Guild 123...: configured tag '<@&456...>' is a mention, not a server tag —
-monitoring paused for this guild to avoid mass role removal
+Guild 123...: configured tag '<@&456...>' can never match a server tag (mention,
+or longer than Discord's 4-character limit) — monitoring paused for this guild
+to avoid mass role removal
 ```
 
-A role mention was stored in the `tag` field. Such a value can never match any member: without a safeguard, the bot would conclude nobody carries the tag anymore and strip the roles from the whole server. It therefore pauses monitoring and **touches no role at all** until the configuration is fixed.
+An impossible-to-satisfy value was stored in the `tag` field: a pasted role mention, or a tag longer than 4 characters (Discord's server tag limit). Such a value can never match any member: without a safeguard, the bot would conclude nobody carries the tag anymore and strip the roles from the whole server. It therefore pauses monitoring and **touches no role at all** until the configuration is fixed.
 
 **Fix**: run `/config` again with the short server tag (e.g. `tag:VIP`) and leave the roles in the `roles` field. `/status` keeps showing the alert for as long as the configuration is broken.
 

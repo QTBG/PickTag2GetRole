@@ -78,8 +78,9 @@ class TagMonitor(commands.Cog):
             if guild_id not in self.invalid_tag_guilds:
                 self.invalid_tag_guilds.add(guild_id)
                 logger.warning(
-                    "Guild %s: configured tag %r is a mention, not a server tag — "
-                    "monitoring paused for this guild to avoid mass role removal",
+                    "Guild %s: configured tag %r can never match a server tag (mention, "
+                    "or longer than Discord's 4-character limit) — monitoring paused for "
+                    "this guild to avoid mass role removal",
                     guild_id, tag_to_watch
                 )
             return None
@@ -365,7 +366,7 @@ class TagMonitor(commands.Cog):
             return None
 
         if is_unmatchable_tag(tag_to_watch):
-            logger.warning("Guild %s: refusing to scan, configured tag %r is a mention",
+            logger.warning("Guild %s: refusing to scan, configured tag %r can never match a server tag",
                            guild.id, tag_to_watch)
             return None
 
