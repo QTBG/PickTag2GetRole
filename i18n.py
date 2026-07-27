@@ -203,6 +203,103 @@ RESPONSES: dict[str, dict[str, str]] = {
         'it': "❌ Tag non valido. Deve essere lungo tra 1 e {max} caratteri.",
         'pt-BR': "❌ Tag inválida. Deve ter entre 1 e {max} caracteres.",
     },
+    'config.tag_is_mention': {
+        'en': "❌ That looks like a **role mention**, not a server tag.\n\n"
+              "The `tag` field expects your server's short TAG — the 2-4 characters shown next to "
+              "member names — while roles go in the `roles` field.\n\n"
+              "Example: `/config tag:VIP roles:@VIP-Member`",
+        'fr': "❌ Ceci ressemble à une **mention de rôle**, pas à un tag de serveur.\n\n"
+              "Le champ `tag` attend le TAG court de votre serveur — les 2 à 4 caractères affichés "
+              "à côté des pseudos — tandis que les rôles vont dans le champ `roles`.\n\n"
+              "Exemple : `/config tag:VIP roles:@Membre-VIP`",
+        'es': "❌ Eso parece una **mención de rol**, no una etiqueta de servidor.\n\n"
+              "El campo `tag` espera la ETIQUETA corta de tu servidor — los 2-4 caracteres que "
+              "aparecen junto a los nombres — mientras que los roles van en el campo `roles`.\n\n"
+              "Ejemplo: `/config tag:VIP roles:@Miembro-VIP`",
+        'de': "❌ Das sieht nach einer **Rollen-Erwähnung** aus, nicht nach einem Server-Tag.\n\n"
+              "Das Feld `tag` erwartet den kurzen TAG deines Servers — die 2-4 Zeichen neben den "
+              "Mitgliedsnamen — Rollen gehören ins Feld `roles`.\n\n"
+              "Beispiel: `/config tag:VIP roles:@VIP-Mitglied`",
+        'it': "❌ Sembra una **menzione di ruolo**, non un tag del server.\n\n"
+              "Il campo `tag` richiede il TAG breve del tuo server — i 2-4 caratteri mostrati "
+              "accanto ai nomi — mentre i ruoli vanno nel campo `roles`.\n\n"
+              "Esempio: `/config tag:VIP roles:@Membro-VIP`",
+        'pt-BR': "❌ Isso parece uma **menção de cargo**, não uma tag do servidor.\n\n"
+                 "O campo `tag` espera a TAG curta do seu servidor — os 2-4 caracteres exibidos ao "
+                 "lado dos nomes — enquanto os cargos vão no campo `roles`.\n\n"
+                 "Exemplo: `/config tag:VIP roles:@Membro-VIP`",
+    },
+    'config.tag_long_warning_field': {
+        'en': "⚠️ This tag looks too long",
+        'fr': "⚠️ Ce tag semble trop long",
+        'es': "⚠️ Esta etiqueta parece demasiado larga",
+        'de': "⚠️ Dieser Tag wirkt zu lang",
+        'it': "⚠️ Questo tag sembra troppo lungo",
+        'pt-BR': "⚠️ Esta tag parece longa demais",
+    },
+    'config.tag_long_warning_text': {
+        'en': "Discord server tags are at most {max} characters. Yours is {length}, so it may never "
+              "match anyone. Double-check it with `/check @member`.",
+        'fr': "Les tags de serveur Discord font au maximum {max} caractères. Le vôtre en fait {length}, "
+              "il risque de ne jamais correspondre. Vérifiez-le avec `/check @membre`.",
+        'es': "Las etiquetas de servidor de Discord tienen como máximo {max} caracteres. La tuya tiene "
+              "{length}, así que puede que nunca coincida. Compruébalo con `/check @miembro`.",
+        'de': "Discord-Server-Tags haben höchstens {max} Zeichen. Deiner hat {length} und passt "
+              "möglicherweise nie. Prüfe ihn mit `/check @Mitglied`.",
+        'it': "I tag del server Discord hanno al massimo {max} caratteri. Il tuo ne ha {length}, quindi "
+              "potrebbe non corrispondere mai. Verificalo con `/check @membro`.",
+        'pt-BR': "As tags de servidor do Discord têm no máximo {max} caracteres. A sua tem {length}, "
+                 "então pode nunca corresponder. Confira com `/check @membro`.",
+    },
+    'status.invalid_tag_field': {
+        'en': "🚫 Invalid tag — monitoring paused",
+        'fr': "🚫 Tag invalide — surveillance en pause",
+        'es': "🚫 Etiqueta no válida — supervisión en pausa",
+        'de': "🚫 Ungültiger Tag — Überwachung pausiert",
+        'it': "🚫 Tag non valido — monitoraggio in pausa",
+        'pt-BR': "🚫 Tag inválida — monitoramento pausado",
+    },
+    'status.invalid_tag_text': {
+        'en': "The configured tag is a mention, not a server tag, so it can never match. The bot is "
+              "**not** touching any roles until you fix it with `/config`.",
+        'fr': "Le tag configuré est une mention, pas un tag de serveur : il ne peut jamais correspondre. "
+              "Le bot ne touche à **aucun** rôle tant que vous ne le corrigez pas avec `/config`.",
+        'es': "La etiqueta configurada es una mención, no una etiqueta de servidor, así que nunca puede "
+              "coincidir. El bot **no** toca ningún rol hasta que lo corrijas con `/config`.",
+        'de': "Der konfigurierte Tag ist eine Erwähnung und kein Server-Tag, er kann also nie passen. "
+              "Der Bot ändert **keine** Rollen, bis du das mit `/config` korrigierst.",
+        'it': "Il tag configurato è una menzione, non un tag del server, quindi non può mai corrispondere. "
+              "Il bot **non** tocca alcun ruolo finché non lo correggi con `/config`.",
+        'pt-BR': "A tag configurada é uma menção, não uma tag de servidor, então nunca vai corresponder. "
+                 "O bot **não** mexe em nenhum cargo até você corrigir com `/config`.",
+    },
+    'status.permission_field': {
+        'en': "⚠️ Missing permissions",
+        'fr': "⚠️ Permissions insuffisantes",
+        'es': "⚠️ Permisos insuficientes",
+        'de': "⚠️ Fehlende Berechtigungen",
+        'it': "⚠️ Permessi insufficienti",
+        'pt-BR': "⚠️ Permissões insuficientes",
+    },
+    'status.permission_text': {
+        'en': "I couldn't update roles for {count} member(s) during the last scan. Move my role **above** "
+              "the configured roles in Server Settings → Roles, and check I have **Manage Roles**.",
+        'fr': "Je n'ai pas pu mettre à jour les rôles de {count} membre(s) lors du dernier scan. Placez mon "
+              "rôle **au-dessus** des rôles configurés dans Paramètres du serveur → Rôles, et vérifiez que "
+              "j'ai la permission **Gérer les rôles**.",
+        'es': "No pude actualizar los roles de {count} miembro(s) en el último escaneo. Sube mi rol **por "
+              "encima** de los roles configurados en Ajustes del servidor → Roles y comprueba que tengo "
+              "**Gestionar roles**.",
+        'de': "Ich konnte die Rollen von {count} Mitglied(ern) beim letzten Scan nicht ändern. Verschiebe "
+              "meine Rolle in den Servereinstellungen → Rollen **über** die konfigurierten Rollen und prüfe "
+              "die Berechtigung **Rollen verwalten**.",
+        'it': "Non ho potuto aggiornare i ruoli di {count} membro/i durante l'ultima scansione. Sposta il mio "
+              "ruolo **sopra** i ruoli configurati in Impostazioni server → Ruoli e verifica che io abbia "
+              "**Gestire i ruoli**.",
+        'pt-BR': "Não consegui atualizar os cargos de {count} membro(s) no último escaneamento. Mova meu cargo "
+                 "**acima** dos cargos configurados em Configurações do servidor → Cargos e confira se tenho "
+                 "**Gerenciar cargos**.",
+    },
     'config.too_many_roles': {
         'en': "❌ Too many roles ({count}). Maximum is {max}.",
         'fr': "❌ Trop de rôles ({count}). Le maximum est {max}.",
