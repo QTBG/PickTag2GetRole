@@ -55,6 +55,7 @@ The bot does **not** subscribe to message, reaction, typing, voice, or moderatio
 - No user data is permanently stored
 
 ## Security
+- Stored values (configured tag, role IDs, aggregated counters) are encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256); the key is held outside the data volume, so database files and backups are unusable without it
 - Data is stored locally with file system permissions
 - No external API calls except Discord's official API
 - Logs contain Discord IDs only (never usernames or message content) and are automatically rotated

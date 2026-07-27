@@ -111,6 +111,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 - `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
 - `LOG_FILE` : Chemin du fichier de log (optionnel, défaut: `bot.log`, rotation automatique 5 Mo × 3). Mettre une valeur vide pour ne logger que sur stdout (recommandé sous Docker)
 - `CHUNK_ENABLED_GUILDS` : `true` (défaut) charge en cache la liste complète des membres des serveurs où la surveillance est **activée**, pour une détection temps réel complète même sur les gros serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache — avec beaucoup de très gros serveurs, augmentez la limite mémoire Docker (ex: 384M/512M) ou mettez `false` (la détection reposera alors sur le scan quotidien et `/scan` pour les gros serveurs)
+- `ENCRYPTION_KEY` : Clé Fernet activant le **chiffrement au repos** des valeurs stockées (recommandé, voir la section dédiée). Vide = stockage en clair
 - `BACKUP_ENABLED` : `true` (défaut) active la sauvegarde quotidienne de la base dans `data/backups/`
 - `BACKUP_KEEP` : Nombre de sauvegardes journalières conservées (défaut : 7)
 - `MEMORY_LIMIT` / `CPU_LIMIT` : Limites du conteneur, utilisées uniquement par `docker-compose.yml` (défauts : `512M` et `0.5`)
@@ -126,6 +127,24 @@ Le bot utilise une base de données SQLite (`data/bot_data.db`) pour stocker les
 **Sécurité & Confidentialité** :
 - Chaque serveur n'a accès qu'à ses propres données
 - Les données sont automatiquement supprimées quand le bot est retiré d'un serveur
+
+### Chiffrement au repos
+
+Avec `ENCRYPTION_KEY` définie, toutes les **valeurs** stockées sont chiffrées avec Fernet (AES-128-CBC + HMAC-SHA256) : tag surveillé, IDs de rôles et compteurs journaliers. Les identifiants qui servent de clés (ID de serveur, date) restent en clair pour rester indexables.
+
+Une copie du fichier de base, ou d'une sauvegarde, est donc inexploitable sans la clé.
+
+**Générer une clé** :
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+Renseignez-la ensuite dans `ENCRYPTION_KEY` (variable d'environnement, jamais dans le volume de données).
+
+**Migration** : au premier démarrage avec une clé, les données existantes en clair sont chiffrées automatiquement. L'opération est idempotente et ne perd aucune configuration.
+
+⚠️ **Conservez la clé hors du serveur.** Sans elle, une base déjà chiffrée (et ses sauvegardes) est irrécupérable. Le bot refuse de démarrer si la clé est absente, incorrecte ou malformée, plutôt que de tourner avec des données illisibles et d'écraser des configurations valides.
+
+Sans `ENCRYPTION_KEY`, le bot fonctionne en clair : les installations auto-hébergées existantes ne sont pas cassées. `/botstats` indique l'état du chiffrement.
 
 ### Sauvegardes automatiques
 
@@ -446,6 +465,7 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 - `LOG_FILE`: Log file path (optional, default: `bot.log`, automatic rotation 5 MB × 3). Set to an empty value to log to stdout only (recommended with Docker)
 - `CHUNK_ENABLED_GUILDS`: `true` (default) caches the full member list of servers where monitoring is **enabled**, for complete real-time detection even on large servers (>250 members). Cost: ~1 KB of RAM per cached member — with many very large servers, raise the Docker memory limit (e.g. 384M/512M) or set `false` (large servers will then rely on the daily scan and `/scan`)
 - `BACKUP_ENABLED`: `true` (default) enables the daily database backup into `data/backups/`
+- `ENCRYPTION_KEY`: Fernet key enabling **encryption at rest** for stored values (recommended, see dedicated section). Empty means clear-text storage
 - `BACKUP_KEEP`: Number of daily backup files to keep (default: 7)
 - `MEMORY_LIMIT` / `CPU_LIMIT`: Container limits, used by `docker-compose.yml` only (defaults: `512M` and `0.5`)
 - `HEARTBEAT_FILE`: File touched every minute and read by the container HEALTHCHECK (default: `/tmp/picktag_heartbeat`, rarely changed)
@@ -460,6 +480,24 @@ The bot uses an SQLite database (`data/bot_data.db`) to securely store configura
 **Security & Privacy**:
 - Each server only has access to its own data
 - Data is automatically deleted when the bot is removed from a server
+
+### Encryption at Rest
+
+When `ENCRYPTION_KEY` is set, every stored **value** is encrypted with Fernet (AES-128-CBC + HMAC-SHA256): the monitored tag, role IDs and daily counters. Identifiers used as keys (guild ID, date) stay in clear text so they remain indexable.
+
+A copy of the database file, or of a backup, is therefore unusable without the key.
+
+**Generate a key**:
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+Then set it as `ENCRYPTION_KEY` (environment variable, never inside the data volume).
+
+**Migration**: on the first start with a key, existing clear-text data is encrypted automatically. The operation is idempotent and loses no configuration.
+
+⚠️ **Keep the key off the server.** Without it, an already encrypted database (and its backups) cannot be recovered. The bot refuses to start when the key is missing, wrong or malformed, rather than running with unreadable data and overwriting valid configurations.
+
+Without `ENCRYPTION_KEY` the bot runs in clear text, so existing self-hosted installs keep working. `/botstats` reports the encryption status.
 
 ### Automatic Backups
 

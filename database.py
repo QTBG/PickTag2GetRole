@@ -1,24 +1,31 @@
 import json
 import asyncio
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import aiosqlite
 from contextlib import asynccontextmanager
 
+from crypto import FieldCipher
+
+logger = logging.getLogger('PickTag2GetRole.Database')
+
 # Durée de conservation des statistiques agrégées (compteurs journaliers, sans ID utilisateur)
 STATS_RETENTION_DAYS = 365
 
 class DatabaseManager:
-    def __init__(self, db_path: str = 'data/bot_data.db'):
+    def __init__(self, db_path: str = 'data/bot_data.db', cipher: Optional[FieldCipher] = None):
         # Créer le répertoire data s'il n'existe pas
         data_dir = os.path.dirname(db_path)
         if data_dir:
             os.makedirs(data_dir, exist_ok=True)
-        
+
         self.db_path = db_path
         self.init_lock = asyncio.Lock()
-        
+        # Chiffrement au repos des valeurs stockées (identifiants de clé exclus)
+        self.cipher = cipher if cipher is not None else FieldCipher()
+
     async def initialize(self):
         """Initialize the database with required tables"""
         async with self.init_lock:
@@ -47,6 +54,43 @@ class DatabaseManager:
                     )
                 ''')
                 await db.commit()
+
+        if self.cipher.enabled:
+            await self._encrypt_existing_rows()
+
+    async def _encrypt_existing_rows(self):
+        """Chiffrer les valeurs écrites avant l'activation du chiffrement.
+
+        Idempotent : une valeur déjà chiffrée est reconnue à son préfixe et ignorée.
+        """
+        migrated = 0
+        async with self.get_db() as db:
+            async with db.execute('SELECT guild_id, tag_to_watch, role_ids FROM guild_configs') as cur:
+                rows = await cur.fetchall()
+            for guild_id, tag, role_ids in rows:
+                if self.cipher.looks_encrypted(tag) and self.cipher.looks_encrypted(role_ids):
+                    continue
+                await db.execute(
+                    'UPDATE guild_configs SET tag_to_watch = ?, role_ids = ? WHERE guild_id = ?',
+                    (self.cipher.encrypt(tag), self.cipher.encrypt(role_ids), guild_id)
+                )
+                migrated += 1
+
+            async with db.execute('SELECT guild_id, date, tagged_count, member_count FROM tag_stats') as cur:
+                stat_rows = await cur.fetchall()
+            for guild_id, date_str, tagged, members in stat_rows:
+                if self.cipher.looks_encrypted(tagged) and self.cipher.looks_encrypted(members):
+                    continue
+                await db.execute(
+                    'UPDATE tag_stats SET tagged_count = ?, member_count = ? WHERE guild_id = ? AND date = ?',
+                    (self.cipher.encrypt_int(int(tagged)), self.cipher.encrypt_int(int(members)),
+                     guild_id, date_str)
+                )
+                migrated += 1
+
+            if migrated:
+                await db.commit()
+                logger.info("Encryption at rest: migrated %s plaintext row(s)", migrated)
     
     @asynccontextmanager
     async def get_db(self):
@@ -65,9 +109,11 @@ class DatabaseManager:
                 row = await cursor.fetchone()
                 
                 if row:
+                    tag = self.cipher.decrypt(row[0])
+                    role_ids = self.cipher.decrypt(row[1])
                     return {
-                        'tag_to_watch': row[0],
-                        'role_ids': json.loads(row[1]) if row[1] else [],
+                        'tag_to_watch': tag,
+                        'role_ids': json.loads(role_ids) if role_ids else [],
                         'enabled': bool(row[2])
                     }
                 return None
@@ -83,8 +129,8 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             ''', (
                 guild_id,
-                config.get('tag_to_watch'),
-                role_ids_json,
+                self.cipher.encrypt(config.get('tag_to_watch')),
+                self.cipher.encrypt(role_ids_json),
                 int(config.get('enabled', True))
             ))
             await db.commit()
@@ -102,7 +148,9 @@ class DatabaseManager:
             await db.execute('''
                 INSERT OR REPLACE INTO tag_stats (guild_id, date, tagged_count, member_count)
                 VALUES (?, date('now'), ?, ?)
-            ''', (guild_id, tagged_count, member_count))
+            ''', (guild_id,
+                  self.cipher.encrypt_int(tagged_count),
+                  self.cipher.encrypt_int(member_count)))
             # Purge au fil de l'eau pour borner l'espace disque
             await db.execute(
                 "DELETE FROM tag_stats WHERE guild_id = ? AND date < date('now', ?)",
@@ -119,7 +167,11 @@ class DatabaseManager:
                 (guild_id, f'-{days} days')
             ) as cursor:
                 return [
-                    {'date': row[0], 'tagged': row[1], 'members': row[2]}
+                    {
+                        'date': row[0],
+                        'tagged': self.cipher.decrypt_int(row[1]),
+                        'members': self.cipher.decrypt_int(row[2]),
+                    }
                     async for row in cursor
                 ]
 
@@ -177,9 +229,10 @@ class DatabaseManager:
             ) as cursor:
                 configs = {}
                 async for row in cursor:
+                    role_ids = self.cipher.decrypt(row[2])
                     configs[row[0]] = {
-                        'tag_to_watch': row[1],
-                        'role_ids': json.loads(row[2]) if row[2] else [],
+                        'tag_to_watch': self.cipher.decrypt(row[1]),
+                        'role_ids': json.loads(role_ids) if role_ids else [],
                         'enabled': True
                     }
                 return configs
