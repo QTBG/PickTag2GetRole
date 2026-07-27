@@ -231,6 +231,13 @@ class TagMonitor(commands.Cog):
         Les filtrer évite d'envoyer des requêtes dont l'échec est certain : un
         403 consomme le rate limit de Discord comme un succès, soit environ une
         seconde par membre sur un serveur mal configuré.
+
+        Tout ou rien : si un seul des rôles configurés est intouchable, aucun
+        n'est renvoyé. Appliquer la configuration à moitié laisserait le serveur
+        incohérent (des membres gardant un rôle et perdant l'autre) et retirerait
+        des rôles à des membres que le rôle bloquant protégeait jusqu'ici —
+        discord.py envoyant une requête par rôle, le premier refus interrompait
+        la séquence avant d'atteindre les rôles suivants.
         """
         me = guild.me
         if me is None or not me.guild_permissions.manage_roles:
@@ -238,10 +245,18 @@ class TagMonitor(commands.Cog):
 
         top = me.top_role
         writable = set()
+        existing = set()  # en set : role_ids peut contenir des doublons (anciennes configs)
         for role_id in role_ids:
             role = guild.get_role(role_id)
-            if role and not role.managed and role < top:
+            if role is None:
+                # Rôle supprimé du serveur : rien à écrire, et pas un blocage
+                continue
+            existing.add(role_id)
+            if not role.managed and role < top:
                 writable.add(role_id)
+
+        if writable != existing:
+            return set()
         return writable
 
     async def _update_member_roles(self, member: discord.Member, should_have_roles: bool,
@@ -261,7 +276,10 @@ class TagMonitor(commands.Cog):
         roles_to_remove = []
         blocked = False
 
-        for role_id in role_ids:
+        # dict.fromkeys : dédoublonner en préservant l'ordre — les anciennes
+        # configs peuvent contenir un même rôle deux fois, et chaque occurrence
+        # coûterait une requête HTTP de plus
+        for role_id in dict.fromkeys(role_ids):
             role = member.guild.get_role(role_id)
             if not role:
                 continue
