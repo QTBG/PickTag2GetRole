@@ -161,6 +161,12 @@ class PickTag2GetRole(commands.Bot):
         """Load all enabled configurations to cache for performance"""
         try:
             self.config_cache = await self.db.get_all_enabled_configs()
+        except EncryptionKeyError:
+            # Surtout ne pas avaler : démarrer avec un cache vide désactiverait
+            # silencieusement tous les serveurs (healthcheck au vert), et toute
+            # reconfiguration pendant l'incident écrirait sous la mauvaise clé.
+            # L'exception remonte via setup_hook et le processus sort en erreur.
+            raise
         except Exception as e:
             logger.error(f"Error loading configs to cache: {e}")
             self.config_cache = {}
@@ -188,8 +194,14 @@ class PickTag2GetRole(commands.Bot):
         await self.db.set_guild_config(guild_id, config)
         await self.refresh_cache(guild_id)
 
-# Créer et lancer le bot
-bot = PickTag2GetRole()
+# Créer et lancer le bot. La construction valide ENCRYPTION_KEY (FieldCipher) :
+# une clé malformée lève ici, avant le try de fin de fichier — donner le même
+# message actionnable plutôt qu'une traceback brute.
+try:
+    bot = PickTag2GetRole()
+except EncryptionKeyError as e:
+    logger.critical("Encryption key problem: %s", e)
+    raise SystemExit(1)
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):

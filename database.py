@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 import aiosqlite
 from contextlib import asynccontextmanager
 
-from crypto import FieldCipher
+from crypto import EncryptionKeyError, FieldCipher
 
 logger = logging.getLogger('PickTag2GetRole.Database')
 
@@ -56,41 +56,104 @@ class DatabaseManager:
                 await db.commit()
 
         if self.cipher.enabled:
+            # Ordre critique : vérifier la clé AVANT toute écriture. Avec une
+            # mauvaise clé, migrer quoi que ce soit mélangerait deux clés dans
+            # la base et la rendrait illisible sous chacune d'elles.
+            await self._ensure_key_matches()
             await self._encrypt_existing_rows()
+            await self._encrypt_backup_files()
 
-    async def _encrypt_existing_rows(self):
-        """Chiffrer les valeurs écrites avant l'activation du chiffrement.
+    async def _ensure_key_matches(self):
+        """Refuser de continuer si la clé ne déchiffre aucune valeur déjà chiffrée.
+
+        Une ligne isolée illisible au milieu de lignes saines n'est pas un
+        problème de clé (elle sera signalée au chargement) ; c'est l'échec de
+        TOUTES les lignes chiffrées qui signe une mauvaise clé. Une base sans
+        aucune ligne chiffrée (première activation) ne prouve rien et passe.
+        """
+        readable = 0
+        unreadable = 0
+        async with self.get_db() as db:
+            async with db.execute('SELECT tag_to_watch, role_ids FROM guild_configs') as cur:
+                async for tag, role_ids in cur:
+                    for value in (tag, role_ids):
+                        if not self.cipher.looks_encrypted(value):
+                            continue
+                        try:
+                            self.cipher.decrypt(value)
+                            readable += 1
+                        except EncryptionKeyError:
+                            unreadable += 1
+        if unreadable and not readable:
+            raise EncryptionKeyError(
+                "ENCRYPTION_KEY does not decrypt any of the encrypted values already "
+                "stored in this database. Restore the key that was used to write it — "
+                "the bot refuses to start rather than run with unreadable data."
+            )
+
+    async def _encrypt_rows_in(self, db) -> int:
+        """Chiffrer les valeurs en clair d'une connexion donnée (sans commit).
 
         Idempotent : une valeur déjà chiffrée est reconnue à son préfixe et ignorée.
         """
         migrated = 0
+        async with db.execute('SELECT guild_id, tag_to_watch, role_ids FROM guild_configs') as cur:
+            rows = await cur.fetchall()
+        for guild_id, tag, role_ids in rows:
+            if self.cipher.looks_encrypted(tag) and self.cipher.looks_encrypted(role_ids):
+                continue
+            await db.execute(
+                'UPDATE guild_configs SET tag_to_watch = ?, role_ids = ? WHERE guild_id = ?',
+                (self.cipher.encrypt(tag), self.cipher.encrypt(role_ids), guild_id)
+            )
+            migrated += 1
+
+        async with db.execute('SELECT guild_id, date, tagged_count, member_count FROM tag_stats') as cur:
+            stat_rows = await cur.fetchall()
+        for guild_id, date_str, tagged, members in stat_rows:
+            if self.cipher.looks_encrypted(tagged) and self.cipher.looks_encrypted(members):
+                continue
+            await db.execute(
+                'UPDATE tag_stats SET tagged_count = ?, member_count = ? WHERE guild_id = ? AND date = ?',
+                (self.cipher.encrypt_int(int(tagged)), self.cipher.encrypt_int(int(members)),
+                 guild_id, date_str)
+            )
+            migrated += 1
+        return migrated
+
+    async def _encrypt_existing_rows(self):
+        """Chiffrer les valeurs écrites avant l'activation du chiffrement."""
         async with self.get_db() as db:
-            async with db.execute('SELECT guild_id, tag_to_watch, role_ids FROM guild_configs') as cur:
-                rows = await cur.fetchall()
-            for guild_id, tag, role_ids in rows:
-                if self.cipher.looks_encrypted(tag) and self.cipher.looks_encrypted(role_ids):
-                    continue
-                await db.execute(
-                    'UPDATE guild_configs SET tag_to_watch = ?, role_ids = ? WHERE guild_id = ?',
-                    (self.cipher.encrypt(tag), self.cipher.encrypt(role_ids), guild_id)
-                )
-                migrated += 1
-
-            async with db.execute('SELECT guild_id, date, tagged_count, member_count FROM tag_stats') as cur:
-                stat_rows = await cur.fetchall()
-            for guild_id, date_str, tagged, members in stat_rows:
-                if self.cipher.looks_encrypted(tagged) and self.cipher.looks_encrypted(members):
-                    continue
-                await db.execute(
-                    'UPDATE tag_stats SET tagged_count = ?, member_count = ? WHERE guild_id = ? AND date = ?',
-                    (self.cipher.encrypt_int(int(tagged)), self.cipher.encrypt_int(int(members)),
-                     guild_id, date_str)
-                )
-                migrated += 1
-
+            migrated = await self._encrypt_rows_in(db)
             if migrated:
                 await db.commit()
                 logger.info("Encryption at rest: migrated %s plaintext row(s)", migrated)
+
+    async def _encrypt_backup_files(self):
+        """Appliquer la même migration aux sauvegardes existantes.
+
+        Les snapshots pris avant l'activation de la clé restent en clair sur le
+        même volume jusqu'à leur rotation (7 jours par défaut) — précisément ce
+        que le chiffrement au repos promet d'empêcher. N'est exécuté qu'après
+        _ensure_key_matches : chiffrer une sauvegarde sous une mauvaise clé
+        détruirait la dernière copie lisible des données.
+        """
+        backup_dir = os.path.join(os.path.dirname(self.db_path) or '.', 'backups')
+        if not os.path.isdir(backup_dir):
+            return
+        for name in sorted(os.listdir(backup_dir)):
+            if not (name.startswith('bot_data-') and name.endswith('.db')):
+                continue
+            path = os.path.join(backup_dir, name)
+            try:
+                async with aiosqlite.connect(path) as db:
+                    migrated = await self._encrypt_rows_in(db)
+                    if migrated:
+                        await db.commit()
+                        logger.info("Encryption at rest: migrated %s plaintext row(s) in backup %s",
+                                    migrated, name)
+            except Exception as e:
+                logger.error("Could not encrypt backup %s: %s", name, e)
     
     @asynccontextmanager
     async def get_db(self):
@@ -222,17 +285,48 @@ class DatabaseManager:
         return dest
     
     async def get_all_enabled_configs(self) -> Dict[int, Dict]:
-        """Get all enabled configurations (for monitoring)"""
+        """Get all enabled configurations (for monitoring).
+
+        Une ligne illisible (jeton corrompu, ou écrit sous une autre clé pendant
+        un incident) est ignorée et signalée, au lieu de faire échouer le
+        chargement de tous les autres serveurs. Si AUCUNE ligne n'est
+        déchiffrable, c'est la clé qui est en cause : on lève plutôt que de
+        laisser le bot tourner avec un cache vide.
+        """
+        configs: Dict[int, Dict] = {}
+        key_failures = []
+        parse_failures = []
         async with self.get_db() as db:
             async with db.execute(
                 'SELECT guild_id, tag_to_watch, role_ids FROM guild_configs WHERE enabled = 1'
             ) as cursor:
-                configs = {}
                 async for row in cursor:
-                    role_ids = self.cipher.decrypt(row[2])
-                    configs[row[0]] = {
-                        'tag_to_watch': self.cipher.decrypt(row[1]),
-                        'role_ids': json.loads(role_ids) if role_ids else [],
-                        'enabled': True
-                    }
-                return configs
+                    try:
+                        role_ids = self.cipher.decrypt(row[2])
+                        configs[row[0]] = {
+                            'tag_to_watch': self.cipher.decrypt(row[1]),
+                            'role_ids': json.loads(role_ids) if role_ids else [],
+                            'enabled': True
+                        }
+                    except EncryptionKeyError:
+                        key_failures.append(row[0])
+                    except (ValueError, TypeError):
+                        parse_failures.append(row[0])
+
+        if key_failures and not configs:
+            raise EncryptionKeyError(
+                "None of the stored configurations can be decrypted with the current "
+                "ENCRYPTION_KEY. Restore the key that was used to write this database."
+            )
+        if key_failures:
+            logger.error(
+                "Skipping %s guild config(s) that cannot be decrypted with the current key "
+                "(guild_ids: %s) — these guilds are unmonitored until reconfigured with /config",
+                len(key_failures), key_failures
+            )
+        if parse_failures:
+            logger.error(
+                "Skipping %s guild config(s) with unparseable role_ids (guild_ids: %s)",
+                len(parse_failures), parse_failures
+            )
+        return configs
