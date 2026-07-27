@@ -70,12 +70,21 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - **`/config <tag> <@role1 @role2...>`** : Configure le tag à surveiller et les rôles à attribuer
   - Exemple : `/config [TAG] @Membre @VIP`
+  - Sécurité : impossible de configurer un rôle supérieur ou égal à votre rôle le plus élevé (ou à celui du bot)
   
-- **`/status`** : Affiche la configuration actuelle du bot
+- **`/status`** : Affiche la configuration actuelle du bot et le nombre de membres ayant le tag
   
 - **`/toggle`** : Active ou désactive la surveillance des tags
   
-- **`/scan`** : Force un scan immédiat de tous les membres (utile après la configuration initiale)
+- **`/scan`** : Force un scan immédiat de tous les membres (utile après la configuration initiale, cooldown de 60s)
+
+- **`/check <@membre>`** : Vérifie le statut du tag d'un membre spécifique
+
+- **`/stats`** : Évolution du nombre de membres avec le tag (7 jours, 30 jours, mini-graphe). Compteurs agrégés uniquement, aucun ID utilisateur stocké
+
+- **`/reset`** : Supprime la configuration et toutes les données stockées pour ce serveur
+
+- **`/botstats`** : Statistiques globales du bot (réservé au propriétaire du bot) : serveurs, membres, uptime, RAM, latence, taille de la base
 
 ### Configuration initiale
 
@@ -92,6 +101,10 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
 - `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
+- `LOG_FILE` : Chemin du fichier de log (optionnel, défaut: `bot.log`, rotation automatique 5 Mo × 3). Mettre une valeur vide pour ne logger que sur stdout (recommandé sous Docker)
+- `CHUNK_ENABLED_GUILDS` : `true` (défaut) charge en cache la liste complète des membres des serveurs où la surveillance est **activée**, pour une détection temps réel complète même sur les gros serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache — avec beaucoup de très gros serveurs, augmentez la limite mémoire Docker (ex: 384M/512M) ou mettez `false` (la détection reposera alors sur le scan quotidien et `/scan` pour les gros serveurs)
+- `BACKUP_ENABLED` : `true` (défaut) active la sauvegarde quotidienne de la base dans `data/backups/`
+- `BACKUP_KEEP` : Nombre de sauvegardes journalières conservées (défaut : 7)
 
 ### Base de données
 
@@ -104,12 +117,36 @@ Le bot utilise une base de données SQLite (`data/bot_data.db`) pour stocker les
 - Chaque serveur n'a accès qu'à ses propres données
 - Les données sont automatiquement supprimées quand le bot est retiré d'un serveur
 
+### Sauvegardes automatiques
+
+Le bot sauvegarde automatiquement sa base SQLite pour se protéger d'une corruption :
+
+- **Quand** : au démarrage puis toutes les 24 h
+- **Où** : `data/backups/bot_data-YYYYMMDD.db` (un fichier par jour, les `BACKUP_KEEP` plus récents conservés, 7 par défaut)
+- **Comment** : API de sauvegarde en ligne de SQLite — snapshot cohérent même pendant les écritures (un simple `cp` d'une base WAL active ne l'est pas), écriture atomique
+- **Contrôle d'intégrité** : `PRAGMA quick_check` avant chaque sauvegarde. En cas d'échec, le bot n'écrase **ni ne purge** les sauvegardes saines existantes et logge une erreur bien visible (visible aussi dans `/botstats`)
+
+**Restauration** (le volume Docker `picktag_data` contient `bot_data.db` et `backups/`) :
+```bash
+docker compose down                                            # ou arrêter l'app dans Dokploy
+VOL=$(docker volume ls -q | grep picktag_data | head -1)
+MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL")
+sudo cp "$MP/backups/bot_data-AAAAMMJJ.db" "$MP/bot_data.db"
+sudo rm -f "$MP/bot_data.db-wal" "$MP/bot_data.db-shm"
+sudo chown -R 1000:1000 "$MP"
+docker compose up -d                                           # ou redéployer dans Dokploy
+```
+
+⚠️ Ces sauvegardes restent sur le même disque que la base. Pour survivre à une panne disque du VPS, copiez-les régulièrement ailleurs (cron + `scp`/`rclone`) — elles ne pèsent que quelques Ko :
+```bash
+0 5 * * * rsync -a "$(docker volume inspect -f '{{.Mountpoint}}' picktag_data)/backups/" user@autre-machine:~/picktag-backups/
+```
 
 ### Optimisations pour VPS léger
 
 Le bot est optimisé pour :
-- Utiliser minimum de RAM (limite Docker : 256MB)
-- Utiliser peu de CPU (limite Docker : 0.5 CPU)
+- Utiliser peu de RAM (limite Docker par défaut : 512MB, ajustable via `MEMORY_LIMIT`)
+- Utiliser peu de CPU (limite Docker : 0.5 CPU, ajustable via `CPU_LIMIT`)
 - Désactiver les intents Discord non nécessaires
 - Utiliser des événements plutôt que du polling constant
 - Traiter les membres par batch avec des pauses
@@ -150,6 +187,31 @@ docker run -d \
 ```bash
 docker logs picktag2getrole
 ```
+
+### ⚠️ Migration depuis une ancienne version (conteneur root)
+
+Le conteneur tourne désormais avec un utilisateur non-root (UID 1000) pour plus de sécurité. Si vous montez un dossier de l'hôte créé par une ancienne version (root), corrigez ses permissions une seule fois :
+```bash
+sudo chown -R 1000:1000 ./data
+```
+Avec le volume nommé `picktag_data` (configuration par défaut), rien à faire : le volume hérite automatiquement du bon propriétaire à sa création.
+
+## 🚀 Déploiement avec Dokploy
+
+Le `docker-compose.yml` du dépôt fonctionne tel quel avec Dokploy.
+
+1. **Créer l'application** : *Create Service* → **Compose** → Provider **GitHub/Git**, dépôt `QTBG/PickTag2GetRole`, branche `main`, Compose Path `./docker-compose.yml`, Compose Type **Docker Compose**
+2. **Environnement** : onglet *Environment*, coller au minimum :
+   ```
+   DISCORD_TOKEN=votre_token
+   ```
+   (toutes les autres variables ont des valeurs par défaut — voir `.env.example`)
+3. **Déployer** : bouton *Deploy*. Le volume nommé `picktag_data` est créé automatiquement et **persiste entre les déploiements**
+4. **Vérifier** : les logs doivent afficher `Bot connected as ...`, et `/botstats` sur Discord donne l'état complet (RAM, intégrité de la base, dernière sauvegarde)
+
+**Migrer une base existante vers Dokploy** : voir la procédure de transfert dans la section *Sauvegardes automatiques* ci-dessus (même principe : copier le fichier `.db` dans le mountpoint du volume, puis `chown -R 1000:1000`).
+
+⚠️ **Ne pas utiliser de bind mount relatif** (`./data:/app/data`) avec Dokploy : le dossier du code est recréé à chaque déploiement, la base serait perdue. Le volume nommé du dépôt évite ce piège.
 
 ## 🔑 Obtenir le token du bot
 
@@ -197,19 +259,21 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 
 ## 📝 Notes importantes
 
-1. **Tags de serveur** : Les tags peuvent être dans le nom d'affichage ou les décorations d'avatar
+1. **Tags de serveur** : Le bot lit le tag "Primary Guild" (tag de serveur) affiché sur le profil, à côté du pseudo. L'utilisateur doit l'avoir activé publiquement
 2. **Performance** : Le bot réagit instantanément aux changements via les événements Discord, avec une vérification quotidienne de sécurité
-3. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
+3. **Détection temps réel** : Par défaut (`CHUNK_ENABLED_GUILDS=true`), le bot met en cache les membres des serveurs surveillés pour une détection instantanée complète, même sur les gros serveurs. Avec `false`, les serveurs >250 membres sont surtout couverts par le scan quotidien et `/scan`
+4. **Langues** : Les commandes et réponses sont localisées en anglais, français, espagnol, allemand, italien et portugais (Brésil), selon la langue du client Discord de chaque utilisateur
+5. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
 
 ## 🐛 Dépannage
 
 ### Le bot ne détecte pas les tags
-- **Vérifier les intents Discord** : PRESENCE INTENT doit être activé dans le Developer Portal
-- Vérifier que le tag est exactement comme configuré (respecter la casse)
+- **Vérifier les intents Discord** : PRESENCE INTENT et SERVER MEMBERS INTENT doivent être activés dans le Developer Portal
+- Vérifier que le tag est exactement comme configuré
 - S'assurer que le bot a les permissions nécessaires
-- Utiliser `/scan debug:True` pour activer les logs détaillés (consultez bot.log)
-- Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) en public
-- Pour un debug permanent, définir `LOG_LEVEL=DEBUG` dans le fichier .env
+- Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) affiché publiquement
+- Pour des logs détaillés, définir `LOG_LEVEL=DEBUG` dans le fichier .env puis consulter bot.log (ou `docker logs`)
+- Lancer `/scan` pour forcer une resynchronisation immédiate
 
 ### Erreurs de permissions
 - Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer
@@ -301,12 +365,21 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - **`/config <tag> <@role1 @role2...>`**: Configure the tag to monitor and roles to assign
   - Example: `/config [TAG] @Member @VIP`
+  - Security: you cannot configure a role higher than or equal to your own highest role (or the bot's)
   
-- **`/status`**: Display current bot configuration
+- **`/status`**: Display current bot configuration and how many members have the tag
   
 - **`/toggle`**: Enable or disable tag monitoring
   
-- **`/scan`**: Force an immediate scan of all members (useful after initial configuration)
+- **`/scan`**: Force an immediate scan of all members (useful after initial configuration, 60s cooldown)
+
+- **`/check <@member>`**: Check a specific member's tag status
+
+- **`/stats`**: Evolution of members with the tag (7 days, 30 days, mini-chart). Aggregated counters only, no user IDs stored
+
+- **`/reset`**: Delete the configuration and all stored data for this server
+
+- **`/botstats`**: Global bot statistics (bot owner only): servers, members, uptime, RAM, latency, database size
 
 ### Initial Setup
 
@@ -323,6 +396,10 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - `DISCORD_TOKEN`: Discord bot token (required)
 - `LOG_LEVEL`: Logging level (optional, default: INFO). Possible values: DEBUG, INFO, WARNING, ERROR
+- `LOG_FILE`: Log file path (optional, default: `bot.log`, automatic rotation 5 MB × 3). Set to an empty value to log to stdout only (recommended with Docker)
+- `CHUNK_ENABLED_GUILDS`: `true` (default) caches the full member list of servers where monitoring is **enabled**, for complete real-time detection even on large servers (>250 members). Cost: ~1 KB of RAM per cached member — with many very large servers, raise the Docker memory limit (e.g. 384M/512M) or set `false` (large servers will then rely on the daily scan and `/scan`)
+- `BACKUP_ENABLED`: `true` (default) enables the daily database backup into `data/backups/`
+- `BACKUP_KEEP`: Number of daily backup files to keep (default: 7)
 
 ### Database
 
@@ -335,11 +412,36 @@ The bot uses an SQLite database (`data/bot_data.db`) to securely store configura
 - Each server only has access to its own data
 - Data is automatically deleted when the bot is removed from a server
 
+### Automatic Backups
+
+The bot automatically backs up its SQLite database to protect against corruption:
+
+- **When**: at startup, then every 24h
+- **Where**: `data/backups/bot_data-YYYYMMDD.db` (one file per day, the `BACKUP_KEEP` most recent kept, 7 by default)
+- **How**: SQLite's online backup API — a consistent snapshot even during writes (a plain `cp` of a live WAL database is not), atomic write
+- **Integrity check**: `PRAGMA quick_check` before every backup. On failure, the bot neither overwrites **nor rotates out** existing healthy backups, and logs a loud error (also visible in `/botstats`)
+
+**Restore** (the `picktag_data` Docker volume holds `bot_data.db` and `backups/`):
+```bash
+docker compose down                                            # or stop the app in Dokploy
+VOL=$(docker volume ls -q | grep picktag_data | head -1)
+MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL")
+sudo cp "$MP/backups/bot_data-YYYYMMDD.db" "$MP/bot_data.db"
+sudo rm -f "$MP/bot_data.db-wal" "$MP/bot_data.db-shm"
+sudo chown -R 1000:1000 "$MP"
+docker compose up -d                                           # or redeploy in Dokploy
+```
+
+⚠️ These backups live on the same disk as the database. To survive a VPS disk failure, copy them elsewhere regularly (cron + `scp`/`rclone`) — they only weigh a few KB:
+```bash
+0 5 * * * rsync -a "$(docker volume inspect -f '{{.Mountpoint}}' picktag_data)/backups/" user@other-machine:~/picktag-backups/
+```
+
 ### Optimizations for Lightweight VPS
 
 The bot is optimized to:
-- Use minimum RAM (Docker limit: 256MB)
-- Use low CPU (Docker limit: 0.5 CPU)
+- Use little RAM (default Docker limit: 512MB, tunable via `MEMORY_LIMIT`)
+- Use low CPU (Docker limit: 0.5 CPU, tunable via `CPU_LIMIT`)
 - Disable unnecessary Discord intents
 - Use events rather than constant polling
 - Process members in batches with pauses
@@ -380,6 +482,31 @@ docker run -d \
 ```bash
 docker logs picktag2getrole
 ```
+
+### ⚠️ Migrating from an older version (root container)
+
+The container now runs as a non-root user (UID 1000) for better security. If you mount a host folder created by an older (root) version, fix its permissions once:
+```bash
+sudo chown -R 1000:1000 ./data
+```
+With the named volume `picktag_data` (default setup), nothing to do: the volume automatically inherits the correct owner when created.
+
+## 🚀 Deploying with Dokploy
+
+The repository's `docker-compose.yml` works as-is with Dokploy.
+
+1. **Create the application**: *Create Service* → **Compose** → Provider **GitHub/Git**, repository `QTBG/PickTag2GetRole`, branch `main`, Compose Path `./docker-compose.yml`, Compose Type **Docker Compose**
+2. **Environment**: in the *Environment* tab, paste at minimum:
+   ```
+   DISCORD_TOKEN=your_token
+   ```
+   (every other variable has a default — see `.env.example`)
+3. **Deploy**: hit *Deploy*. The named volume `picktag_data` is created automatically and **persists across deployments**
+4. **Verify**: logs should show `Bot connected as ...`, and `/botstats` on Discord reports full status (RAM, database integrity, last backup)
+
+**Migrating an existing database to Dokploy**: see the transfer procedure in the *Automatic Backups* section above (same idea: copy the `.db` file into the volume mountpoint, then `chown -R 1000:1000`).
+
+⚠️ **Do not use a relative bind mount** (`./data:/app/data`) with Dokploy: the code directory is recreated on every deployment, so the database would be lost. The repository's named volume avoids this pitfall.
 
 ## 🔑 Getting the Bot Token
 
@@ -427,19 +554,21 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436
 
 ## 📝 Important Notes
 
-1. **Server tags**: Tags can be in the display name or avatar decorations
+1. **Server tags**: The bot reads the "Primary Guild" tag (server tag) displayed on the profile, next to the username. Users must have it publicly enabled
 2. **Performance**: The bot responds instantly to changes via Discord events, with a daily safety verification
-3. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
+3. **Real-time detection**: By default (`CHUNK_ENABLED_GUILDS=true`), the bot caches members of monitored servers for complete instant detection, even on large servers. With `false`, servers >250 members are mostly covered by the daily scan and `/scan`
+4. **Languages**: Commands and responses are localized in English, French, Spanish, German, Italian and Brazilian Portuguese, based on each user's Discord client language
+5. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
 
 ## 🐛 Troubleshooting
 
 ### Bot doesn't detect tags
-- **Check Discord intents**: PRESENCE INTENT must be enabled in the Developer Portal
-- Verify that the tag is exactly as configured (case sensitive)
+- **Check Discord intents**: PRESENCE INTENT and SERVER MEMBERS INTENT must be enabled in the Developer Portal
+- Verify that the tag is exactly as configured
 - Ensure the bot has necessary permissions
-- Use `/scan debug:True` to enable detailed logs (check bot.log)
-- Verify that users have their "Primary Guild" (server tag) public
-- For permanent debug, set `LOG_LEVEL=DEBUG` in the .env file
+- Verify that users have their "Primary Guild" (server tag) publicly displayed
+- For detailed logs, set `LOG_LEVEL=DEBUG` in the .env file then check bot.log (or `docker logs`)
+- Run `/scan` to force an immediate resynchronization
 
 ### Permission errors
 - The bot must have a role higher than the roles it's trying to assign

@@ -9,3 +9,12 @@ README.md
 .vscode
 .idea
 *.log
+# Ne jamais embarquer la base de données de prod dans l'image
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+docker-compose.yml
+banner.png
+logo.png

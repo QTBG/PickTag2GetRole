@@ -2,350 +2,343 @@ from __future__ import annotations
 import discord
 from discord.ext import commands, tasks
 import asyncio
-from typing import Set, Optional, List
+import os
+from typing import Dict, Set, Optional, List
 import logging
 
 logger = logging.getLogger('PickTag2GetRole.TagMonitor')
 
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+# Charger en cache la liste complète des membres des serveurs où la surveillance
+# est activée ("chunking"). Nécessaire pour que les événements temps réel
+# (on_member_update / on_presence_update) couvrent tous les membres des gros
+# serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache.
+CHUNK_ENABLED_GUILDS = _env_flag('CHUNK_ENABLED_GUILDS', True)
+
 class TagMonitor(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.processing = False
-        self.member_cache: dict[int, Set[int]] = {}  # guild_id -> set of member_ids with tag
-        
+        self.chunking_enabled = CHUNK_ENABLED_GUILDS
+        self.member_cache: Dict[int, Set[int]] = {}  # guild_id -> member_ids ayant le tag (dernier scan)
+        self._scan_locks: Dict[int, asyncio.Lock] = {}  # guild_id -> verrou anti-scans concurrents
+        self._global_scan_lock = asyncio.Lock()
+
     async def cog_load(self):
-        """Démarrer la surveillance après le chargement du cog"""
-        # Vérifier la version de discord.py et le support de primary_guild
+        """Démarrer les tâches périodiques après le chargement du cog"""
         logger.info(f"Discord.py version: {discord.__version__}")
-        
-        # Tester si primary_guild est supporté
-        test_member = None
-        for guild in self.bot.guilds:
-            if guild.members:
-                test_member = guild.members[0]
-                break
-        
-        if test_member:
-            has_primary_guild = hasattr(test_member, 'primary_guild')
-            logger.info(f"Primary guild support: {has_primary_guild}")
-            if has_primary_guild:
-                logger.info("Primary guild attribute is available")
-        
-        # Attendre un peu pour s'assurer que tout est chargé
-        await asyncio.sleep(2)
-        
-        # Faire une vérification initiale au démarrage
-        logger.info("Running initial tag check on startup...")
-        await self.check_all_tags()
-        
-        # Démarrer la vérification quotidienne
+        # La première itération de daily_check (juste après on_ready) sert de scan initial
         self.daily_check.start()
         # Démarrer le log des statistiques serveur
         self.server_count_log.start()
-        
+
     async def cog_unload(self):
         """Arrêter la surveillance lors du déchargement"""
         self.daily_check.cancel()
         self.server_count_log.cancel()
-    
+
+    def _get_scan_lock(self, guild_id: int) -> asyncio.Lock:
+        lock = self._scan_locks.get(guild_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._scan_locks[guild_id] = lock
+        return lock
+
+    def get_tagged_count(self, guild_id: int) -> Optional[int]:
+        """Nombre de membres ayant le tag au dernier scan (None si aucun scan encore fait)"""
+        members = self.member_cache.get(guild_id)
+        return len(members) if members is not None else None
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild):
+        """Nettoyer les caches en mémoire quand le bot quitte un serveur"""
+        self.member_cache.pop(guild.id, None)
+        self._scan_locks.pop(guild.id, None)
+
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         """Événement déclenché lors de la mise à jour d'un membre"""
-        if self.processing:
-            return
-            
-        # Vérifier si le serveur a une configuration
         config = self.bot.get_guild_config_cached(after.guild.id)
         if not config or not config.get('enabled', False):
             return
-        
+
         tag_to_watch = config.get('tag_to_watch')
         role_ids = config.get('role_ids', [])
-        
+
         if not tag_to_watch or not role_ids:
             return
-        
+
         # Vérifier si le tag a changé
         before_has_tag = self._member_has_tag(before, tag_to_watch)
         after_has_tag = self._member_has_tag(after, tag_to_watch)
-        
+
         if before_has_tag != after_has_tag:
-            logger.debug(f"Tag change detected for member_id={after.id}: {before_has_tag} -> {after_has_tag}")
+            logger.debug("Tag change detected for member_id=%s: %s -> %s", after.id, before_has_tag, after_has_tag)
             await self._update_member_roles(after, after_has_tag, role_ids)
-    
+
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
         """Événement déclenché lors de la mise à jour de la présence (inclut primary_guild)"""
-        if self.processing:
-            return
-            
-        # Vérifier si le serveur a une configuration
         config = self.bot.get_guild_config_cached(after.guild.id)
         if not config or not config.get('enabled', False):
             return
-        
+
         tag_to_watch = config.get('tag_to_watch')
         role_ids = config.get('role_ids', [])
-        
+
         if not tag_to_watch or not role_ids:
             return
-        
-        # Comparer les primary guilds
-        before_pg = getattr(before, 'primary_guild', None)
-        after_pg = getattr(after, 'primary_guild', None)
-        
-        # Logger les changements pour debug
-        if before_pg != after_pg:
-            logger.debug(f"Primary guild change detected for member_id={after.id}")
-            if before_pg:
-                logger.debug(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
-            else:
-                logger.debug(f"  Before: None")
-            if after_pg:
-                logger.debug(f"  After: ID={after_pg.id}, Tag={after_pg.tag}, Enabled={after_pg.identity_enabled}")
-            else:
-                logger.debug(f"  After: None")
-        
+
         # Vérifier si le tag a changé
         before_has_tag = self._member_has_tag(before, tag_to_watch)
         after_has_tag = self._member_has_tag(after, tag_to_watch)
-        
+
         if before_has_tag != after_has_tag:
-            logger.debug(f"Tag change detected in presence update for member_id={after.id}: {before_has_tag} -> {after_has_tag}")
+            logger.debug("Tag change detected in presence update for member_id=%s: %s -> %s",
+                         after.id, before_has_tag, after_has_tag)
             await self._update_member_roles(after, after_has_tag, role_ids)
-    
+
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
         """Événement déclenché lors de la mise à jour d'un utilisateur (inclut primary_guild)"""
-        logger.debug(f"User update detected for user_id={after.id}")
-        
-        # Vérifier les changements de primary_guild
         before_pg = getattr(before, 'primary_guild', None)
         after_pg = getattr(after, 'primary_guild', None)
-        
-        # Si le primary guild a changé
-        if before_pg != after_pg:
-            logger.debug(f"Primary guild change detected via on_user_update for user_id={after.id}")
-            if before_pg:
-                logger.debug(f"  Before: ID={before_pg.id}, Tag={before_pg.tag}, Enabled={before_pg.identity_enabled}")
-            else:
-                logger.debug(f"  Before: None")
-            if after_pg:
-                logger.debug(f"  After: ID={after_pg.id}, Tag={after_pg.tag}, Enabled={after_pg.identity_enabled}")
-            else:
-                logger.debug(f"  After: None")
-            
-            # Traiter tous les serveurs où cet utilisateur est membre
-            for guild in self.bot.guilds:
-                # Vérifier si l'utilisateur est membre de ce serveur
-                member = guild.get_member(after.id)
-                if not member:
-                    continue
-                
-                # Vérifier si le serveur a une configuration
-                config = self.bot.get_guild_config_cached(guild.id)
-                if not config or not config.get('enabled', False):
-                    continue
-                
-                tag_to_watch = config.get('tag_to_watch')
-                role_ids = config.get('role_ids', [])
-                
-                if not tag_to_watch or not role_ids:
-                    continue
-                
-                # Vérifier si le tag correspond maintenant
-                has_tag = self._member_has_tag(member, tag_to_watch)
-                
-                # Pour vérifier le tag avant, on doit créer un "faux" membre avec les données de before
-                # car on ne peut pas obtenir l'ancien membre depuis le cache
-                before_has_tag = False
-                if before_pg and before_pg.tag and before_pg.identity_enabled != False:
-                    # Comparaison directe des tags
-                    if before_pg.tag.lower() == tag_to_watch.lower():
-                        before_has_tag = True
-                    elif '#' in tag_to_watch and tag_to_watch.lower() in before_pg.tag.lower():
-                        before_has_tag = True
-                
-                # Si le statut du tag a changé, mettre à jour les rôles
-                if before_has_tag != has_tag:
-                    logger.debug(f"Tag change detected for member_id={member.id} in guild_id={guild.id}: {before_has_tag} -> {has_tag}")
-                    await self._update_member_roles(member, has_tag, role_ids)
-    
+
+        if before_pg == after_pg:
+            return
+
+        logger.debug("Primary guild change detected via on_user_update for user_id=%s", after.id)
+
+        # Traiter tous les serveurs où cet utilisateur est membre
+        for guild in self.bot.guilds:
+            member = guild.get_member(after.id)
+            if not member:
+                continue
+
+            config = self.bot.get_guild_config_cached(guild.id)
+            if not config or not config.get('enabled', False):
+                continue
+
+            tag_to_watch = config.get('tag_to_watch')
+            role_ids = config.get('role_ids', [])
+
+            if not tag_to_watch or not role_ids:
+                continue
+
+            # Vérifier si le tag correspond maintenant
+            has_tag = self._member_has_tag(member, tag_to_watch)
+
+            # Reconstituer l'état précédent à partir des données de before
+            # (l'ancien membre n'est plus disponible dans le cache)
+            before_has_tag = False
+            if before_pg and before_pg.tag and before_pg.identity_enabled != False:
+                if before_pg.tag.lower() == tag_to_watch.lower():
+                    before_has_tag = True
+                elif '#' in tag_to_watch and tag_to_watch.lower() in before_pg.tag.lower():
+                    before_has_tag = True
+
+            if before_has_tag != has_tag:
+                logger.debug("Tag change detected for member_id=%s in guild_id=%s: %s -> %s",
+                             member.id, guild.id, before_has_tag, has_tag)
+                await self._update_member_roles(member, has_tag, role_ids)
+
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         """Événement déclenché quand un membre rejoint le serveur"""
-        # Vérifier si le serveur a une configuration
         config = self.bot.get_guild_config_cached(member.guild.id)
         if not config or not config.get('enabled', False):
             return
-        
+
         tag_to_watch = config.get('tag_to_watch')
         role_ids = config.get('role_ids', [])
-        
+
         if not tag_to_watch or not role_ids:
             return
-        
+
         # Vérifier si le nouveau membre a le tag
         if self._member_has_tag(member, tag_to_watch):
-            logger.info(f"New member joined with matching tag: member_id={member.id}")
+            logger.info("New member joined with matching tag: member_id=%s", member.id)
             await self._update_member_roles(member, True, role_ids)
-    
-    async def _fetch_fresh_member(self, guild: discord.Guild, member_id: int) -> Optional[discord.Member]:
-        """Récupérer un membre avec des données fraîches depuis l'API"""
-        try:
-            return await guild.fetch_member(member_id)
-        except discord.NotFound:
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching member {member_id}: {e}")
-            return None
-    
+
     def _member_has_tag(self, member: discord.Member, tag: str) -> bool:
         """Vérifier si un membre a le tag de serveur (guild tag) spécifié"""
         try:
-            logger.debug(f"Checking member: member_id={member.id}")
-            
-            # Vérifier si l'attribut primary_guild existe
-            if not hasattr(member, 'primary_guild'):
-                logger.warning(f"Member ID {member.id} - No primary_guild attribute found. Discord.py version might be too old or member data is incomplete.")
-                return False
-            
-            # Accéder à primary_guild
-            pg = member.primary_guild
+            pg = getattr(member, 'primary_guild', None)
             if pg is None:
-                logger.debug(f"Member ID {member.id} - primary_guild is None")
                 return False
-                
-            logger.debug(f"Member ID {member.id} - Primary Guild found: ID={pg.id}, Tag={pg.tag}, Identity enabled={pg.identity_enabled}")
-            
+
             # Vérifier si l'identité est activée (publiquement affichée)
             if pg.identity_enabled == False:
-                logger.debug(f"Member ID {member.id} has identity_enabled=False, skipping")
                 return False
-            
-            # Vérifier si le tag existe
+
             if not pg.tag:
-                logger.debug(f"Member ID {member.id} has no tag set (tag is None or empty)")
                 return False
-                
-            # Comparaison du tag
-            logger.debug(f"Member ID {member.id} - Comparing tags: member_tag='{pg.tag}' vs looking_for='{tag}'")
-            
+
+            logger.debug("Member %s: tag=%r vs looking_for=%r", member.id, pg.tag, tag)
+
             # Comparaison exacte du tag (insensible à la casse)
             if pg.tag.lower() == tag.lower():
-                logger.debug(f"✅ Member ID {member.id} has matching tag: {pg.tag}")
                 return True
             # Si le tag configuré contient un #, essayer une correspondance partielle
-            elif '#' in tag and tag.lower() in pg.tag.lower():
-                logger.debug(f"✅ Member ID {member.id} has partial matching tag: {pg.tag} (looking for {tag})")
+            if '#' in tag and tag.lower() in pg.tag.lower():
                 return True
-            else:
-                logger.debug(f"Member ID {member.id} has different tag: '{pg.tag}' (looking for '{tag}')")
-            
-        except AttributeError as e:
-            # En cas d'erreur d'attribut, log pour debug
-            logger.error(f"AttributeError accessing primary_guild for member_id={member.id}: {e}")
-            logger.debug(f"Member attributes: {dir(member)}")
+
         except Exception as e:
-            logger.error(f"Unexpected error checking tag for member_id={member.id}: {type(e).__name__}: {e}")
-            
+            logger.error("Unexpected error checking tag for member_id=%s: %s: %s",
+                         member.id, type(e).__name__, e)
+
         return False
-    
-    async def _update_member_roles(self, member: discord.Member, should_have_roles: bool, role_ids: List[int]):
-        """Mettre à jour les rôles d'un membre"""
-        roles_to_update = []
-        
+
+    async def _update_member_roles(self, member: discord.Member, should_have_roles: bool,
+                                   role_ids: List[int]) -> bool:
+        """Mettre à jour les rôles d'un membre. Retourne True si quelque chose a changé."""
+        roles_to_add = []
+        roles_to_remove = []
+
         for role_id in role_ids:
             role = member.guild.get_role(role_id)
             if not role:
                 continue
-                
+
             has_role = role in member.roles
-            
+
             if should_have_roles and not has_role:
-                roles_to_update.append(role)
+                roles_to_add.append(role)
             elif not should_have_roles and has_role:
-                # Pour retirer, on doit modifier la liste des rôles
-                try:
-                    await member.remove_roles(role, reason="Tag de serveur retiré")
-                    logger.debug(f"Removed role role_id={role.id} from member_id={member.id}")
-                except discord.HTTPException as e:
-                    logger.error(f"Error removing role role_id={role.id} from member_id={member.id}: {e}")
-        
-        # Ajouter les rôles en une seule fois
-        if should_have_roles and roles_to_update:
+                roles_to_remove.append(role)
+
+        changed = False
+        # Un seul appel API pour tous les ajouts, un seul pour tous les retraits
+        if roles_to_add:
             try:
-                await member.add_roles(*roles_to_update, reason="Tag de serveur détecté")
-                logger.debug(f"Added roles {[r.id for r in roles_to_update]} to member_id={member.id}")
+                await member.add_roles(*roles_to_add, reason="Server tag detected")
+                logger.debug("Added roles %s to member_id=%s", [r.id for r in roles_to_add], member.id)
+                changed = True
             except discord.HTTPException as e:
-                logger.error(f"Error adding roles to member_id={member.id}: {e}")
-    
-    async def check_all_tags(self):
-        """Vérifier tous les tags pour tous les serveurs (utilisé au démarrage et quotidiennement)"""
-        if self.processing:
+                logger.error("Error adding roles to member_id=%s: %s", member.id, e)
+        if roles_to_remove:
+            try:
+                await member.remove_roles(*roles_to_remove, reason="Server tag removed")
+                logger.debug("Removed roles %s from member_id=%s", [r.id for r in roles_to_remove], member.id)
+                changed = True
+            except discord.HTTPException as e:
+                logger.error("Error removing roles from member_id=%s: %s", member.id, e)
+
+        # Tenir à jour le compteur de membres taggés (stats)
+        cache = self.member_cache.get(member.guild.id)
+        if cache is not None:
+            if should_have_roles:
+                cache.add(member.id)
+            else:
+                cache.discard(member.id)
+
+        return changed
+
+    async def ensure_chunked(self, guild: discord.Guild):
+        """Charger tous les membres du serveur en cache pour la détection temps réel"""
+        if not self.chunking_enabled or guild.chunked:
             return
-            
-        self.processing = True
         try:
+            await guild.chunk(cache=True)
+            logger.info("Chunked guild %s: %s members cached", guild.id, len(guild.members))
+        except Exception as e:
+            logger.error("Error chunking guild %s: %s", guild.id, e)
+
+    async def scan_guild(self, guild: discord.Guild, tag_to_watch: str,
+                         role_ids: List[int]) -> Optional[Dict[str, int]]:
+        """Scanner tous les membres d'un serveur et corriger les rôles.
+
+        Retourne des statistiques, ou None si un scan est déjà en cours pour ce serveur.
+        """
+        lock = self._get_scan_lock(guild.id)
+        if lock.locked():
+            return None
+
+        async with lock:
+            await self.ensure_chunked(guild)
+
+            async def iter_members():
+                if guild.chunked:
+                    # Cache complet : zéro appel REST
+                    for m in list(guild.members):
+                        yield m
+                else:
+                    async for m in guild.fetch_members(limit=None):
+                        yield m
+
+            checked = 0
+            updated = 0
+            tagged: Set[int] = set()
+
+            async for member in iter_members():
+                has_tag = self._member_has_tag(member, tag_to_watch)
+                if has_tag:
+                    tagged.add(member.id)
+                if await self._update_member_roles(member, has_tag, role_ids):
+                    updated += 1
+
+                checked += 1
+                # Petite pause toutes les 10 vérifications pour lisser la charge
+                if checked % 10 == 0:
+                    await asyncio.sleep(0.1)
+
+            self.member_cache[guild.id] = tagged
+
+            # Statistiques agrégées journalières (compteurs uniquement)
+            try:
+                await self.bot.db.record_tag_stat(guild.id, len(tagged), checked)
+            except Exception as e:
+                logger.error("Error recording stats for guild %s: %s", guild.id, e)
+
+            return {'checked': checked, 'tagged': len(tagged), 'updated': updated}
+
+    async def check_all_tags(self):
+        """Vérifier tous les tags pour tous les serveurs (au premier démarrage puis quotidiennement)"""
+        if self._global_scan_lock.locked():
+            return
+
+        async with self._global_scan_lock:
             for guild in self.bot.guilds:
                 config = self.bot.get_guild_config_cached(guild.id)
                 if not config or not config.get('enabled', False):
                     continue
-                
+
                 tag_to_watch = config.get('tag_to_watch')
                 role_ids = config.get('role_ids', [])
-                
+
                 if not tag_to_watch or not role_ids:
                     continue
-                
-                logger.info(f"Checking tags for guild {guild.id}")
-                
-                # Traiter par batch pour économiser les ressources
-                current_members_with_tag = set()
-                checked_count = 0
-                
-                # Utiliser chunk_guild pour charger les membres progressivement
-                async for member in guild.fetch_members(limit=None):
-                    if self._member_has_tag(member, tag_to_watch):
-                        current_members_with_tag.add(member.id)
-                        await self._update_member_roles(member, True, role_ids)
-                    else:
-                        # Vérifier si le membre avait le tag avant
-                        if guild.id in self.member_cache and member.id in self.member_cache[guild.id]:
-                            await self._update_member_roles(member, False, role_ids)
-                    
-                    checked_count += 1
-                    # Petite pause toutes les 10 vérifications pour ne pas surcharger
-                    if checked_count % 10 == 0:
-                        await asyncio.sleep(0.1)
-                
-                # Mettre à jour le cache
-                self.member_cache[guild.id] = current_members_with_tag
-                logger.info(f"Checked {checked_count} members in guild {guild.id}, {len(current_members_with_tag)} have the tag")
-                
-        except Exception as e:
-            logger.error(f"Error in check_all_tags: {e}")
-        finally:
-            self.processing = False
-    
+
+                try:
+                    stats = await self.scan_guild(guild, tag_to_watch, role_ids)
+                    if stats:
+                        logger.info("Guild %s: %s members checked, %s tagged, %s updated",
+                                    guild.id, stats['checked'], stats['tagged'], stats['updated'])
+                except Exception as e:
+                    logger.error("Error scanning guild %s: %s", guild.id, e)
+
     @tasks.loop(hours=24)  # Vérification une fois par jour
     async def daily_check(self):
         """Tâche quotidienne pour vérifier les tags"""
         logger.info("Starting daily tag verification...")
         await self.check_all_tags()
         logger.info("Daily tag verification completed")
-    
+
     @daily_check.before_loop
     async def before_daily_check(self):
         """Attendre que le bot soit prêt avant de démarrer la tâche"""
         await self.bot.wait_until_ready()
-    
+
     @tasks.loop(hours=12)  # Log server count every 12 hours
     async def server_count_log(self):
         """Log server count and basic statistics"""
         enabled_count = len(self.bot.config_cache)
         logger.info(f"Server Statistics: Total={len(self.bot.guilds)} | Enabled={enabled_count}")
-    
+
     @server_count_log.before_loop
     async def before_server_count_log(self):
         """Wait for bot to be ready"""
