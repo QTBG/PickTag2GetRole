@@ -11,6 +11,7 @@ import asyncio
 from dotenv import load_dotenv
 
 from typing import Dict, Optional
+from crypto import EncryptionKeyError
 from database import DatabaseManager
 from i18n import t, CommandTranslator
 
@@ -226,9 +227,20 @@ async def main():
     if not token:
         logger.error("Discord token not found in .env file")
         return
-    
+
+    if bot.db.cipher.enabled:
+        logger.info("Encryption at rest: enabled")
+    else:
+        logger.warning("Encryption at rest: disabled (no ENCRYPTION_KEY set)")
+
     async with bot:
         await bot.start(token)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except EncryptionKeyError as e:
+        # Mieux vaut refuser de démarrer que tourner avec des données illisibles
+        # et écraser des configurations valides.
+        logger.critical("Encryption key problem: %s", e)
+        raise SystemExit(1)

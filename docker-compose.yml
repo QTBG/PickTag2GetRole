@@ -17,6 +17,8 @@ services:
       # Sauvegarde quotidienne de la base dans /app/data/backups (7 jours conservés)
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_KEEP=${BACKUP_KEEP:-7}
+      # Chiffrement au repos des valeurs stockées (vide = données en clair)
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
     volumes:
       # Volume nommé : survit aux redéploiements (Dokploy, git pull, rebuild)
       # et hérite automatiquement des permissions de l'utilisateur non-root.

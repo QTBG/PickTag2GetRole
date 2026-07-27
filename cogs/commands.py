@@ -581,6 +581,8 @@ class ConfigCommands(commands.Cog):
         embed.add_field(name="Memory (RSS)", value=f"{rss_mb:.1f} MB" if rss_mb is not None else "n/a", inline=True)
         embed.add_field(name="Database size", value=db_text, inline=True)
         embed.add_field(name="DB integrity", value=integrity or "not checked yet", inline=True)
+        embed.add_field(name="Encryption at rest",
+                        value="enabled" if self.bot.db.cipher.enabled else "disabled", inline=True)
         embed.add_field(name="Last backup", value=backup_text, inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
 
