@@ -268,7 +268,7 @@ class ConfigCommands(commands.Cog):
                 value=t(locale, 'status.invalid_tag_text'),
                 inline=False
             )
-        blocked = tag_monitor.permission_issues.get(interaction.guild.id, 0) if tag_monitor else 0
+        blocked = len(tag_monitor.permission_issues.get(interaction.guild.id, ())) if tag_monitor else 0
         if blocked:
             embed.add_field(
                 name=t(locale, 'status.permission_field'),
@@ -364,6 +364,16 @@ class ConfigCommands(commands.Cog):
         if not tag_to_watch or not role_ids:
             await interaction.response.send_message(
                 t(locale, 'scan.incomplete'),
+                ephemeral=True
+            )
+            return
+
+        # Tag invalide stocké avant les garde-fous : scan_guild refuserait en
+        # silence et l'admin recevrait « un scan est déjà en cours » — donner
+        # le vrai diagnostic et le correctif à la place
+        if is_unmatchable_tag(tag_to_watch):
+            await interaction.response.send_message(
+                t(locale, 'status.invalid_tag_text'),
                 ephemeral=True
             )
             return

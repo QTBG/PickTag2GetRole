@@ -27,7 +27,7 @@ class TagMonitor(commands.Cog):
         self.bot = bot
         self.chunking_enabled = CHUNK_ENABLED_GUILDS
         self.member_cache: Dict[int, Set[int]] = {}  # guild_id -> member_ids ayant le tag (dernier scan)
-        self.permission_issues: Dict[int, int] = {}  # guild_id -> membres non modifiables (403)
+        self.permission_issues: Dict[int, Set[int]] = {}  # guild_id -> IDs des membres non modifiables
         self.invalid_tag_guilds: Set[int] = set()  # guild_id -> configuration impossible à satisfaire
         self._scan_locks: Dict[int, asyncio.Lock] = {}  # guild_id -> verrou anti-scans concurrents
         self._global_scan_lock = asyncio.Lock()
@@ -87,16 +87,22 @@ class TagMonitor(commands.Cog):
         self.invalid_tag_guilds.discard(guild_id)
         return tag_to_watch, role_ids
 
-    def _note_permission_issue(self, guild_id: int):
-        """Comptabiliser un 403 et n'en logger qu'un seul par serveur"""
-        seen = self.permission_issues.get(guild_id, 0)
-        self.permission_issues[guild_id] = seen + 1
-        if seen == 0:
+    def _note_permission_issue(self, guild_id: int, member_id: int):
+        """Comptabiliser un membre non modifiable et ne logger qu'une fois par serveur.
+
+        Un set d'IDs et non un compteur : les listeners temps réel peuvent
+        repasser plusieurs fois sur le même membre entre deux scans, et un
+        compteur gonflerait au-delà du nombre réel de membres concernés
+        (/status affichait « 13 membres » sur un serveur de 10).
+        """
+        members = self.permission_issues.setdefault(guild_id, set())
+        if not members:
             logger.warning(
                 "Guild %s: missing permissions to manage roles — my role is probably "
                 "below the configured roles, or I lack Manage Roles",
                 guild_id
             )
+        members.add(member_id)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):
@@ -300,7 +306,7 @@ class TagMonitor(commands.Cog):
         # Changement nécessaire sur un rôle non modifiable : on le comptabilise
         # pour /status, mais sans appeler l'API puisque la requête échouerait
         if blocked:
-            self._note_permission_issue(member.guild.id)
+            self._note_permission_issue(member.guild.id, member.id)
 
         changed = False
         # discord.py envoie une requête par rôle (add_roles/remove_roles sont
@@ -313,7 +319,7 @@ class TagMonitor(commands.Cog):
             except discord.Forbidden:
                 # Rôle au-dessus du bot ou permission manquante : signalé une fois par
                 # serveur plutôt qu'une ligne d'erreur par membre
-                self._note_permission_issue(member.guild.id)
+                self._note_permission_issue(member.guild.id, member.id)
             except discord.HTTPException as e:
                 logger.error("Error adding roles in guild_id=%s to member_id=%s: %s",
                              member.guild.id, member.id, e)
@@ -323,7 +329,7 @@ class TagMonitor(commands.Cog):
                 logger.debug("Removed roles %s from member_id=%s", [r.id for r in roles_to_remove], member.id)
                 changed = True
             except discord.Forbidden:
-                self._note_permission_issue(member.guild.id)
+                self._note_permission_issue(member.guild.id, member.id)
             except discord.HTTPException as e:
                 logger.error("Error removing roles in guild_id=%s from member_id=%s: %s",
                              member.guild.id, member.id, e)
@@ -424,7 +430,7 @@ class TagMonitor(commands.Cog):
                 try:
                     stats = await self.scan_guild(guild, tag_to_watch, role_ids)
                     if stats:
-                        blocked = self.permission_issues.get(guild.id, 0)
+                        blocked = len(self.permission_issues.get(guild.id, ()))
                         logger.info("Guild %s: %s members checked, %s tagged, %s updated%s",
                                     guild.id, stats['checked'], stats['tagged'], stats['updated'],
                                     f", {blocked} blocked by permissions" if blocked else "")

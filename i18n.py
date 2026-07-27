@@ -282,21 +282,21 @@ RESPONSES: dict[str, dict[str, str]] = {
         'pt-BR': "⚠️ Permissões insuficientes",
     },
     'status.permission_text': {
-        'en': "I couldn't update roles for {count} member(s) during the last scan. Move my role **above** "
+        'en': "I couldn't update roles for {count} member(s) since the last scan. Move my role **above** "
               "the configured roles in Server Settings → Roles, and check I have **Manage Roles**.",
-        'fr': "Je n'ai pas pu mettre à jour les rôles de {count} membre(s) lors du dernier scan. Placez mon "
+        'fr': "Je n'ai pas pu mettre à jour les rôles de {count} membre(s) depuis le dernier scan. Placez mon "
               "rôle **au-dessus** des rôles configurés dans Paramètres du serveur → Rôles, et vérifiez que "
               "j'ai la permission **Gérer les rôles**.",
-        'es': "No pude actualizar los roles de {count} miembro(s) en el último escaneo. Sube mi rol **por "
+        'es': "No pude actualizar los roles de {count} miembro(s) desde el último escaneo. Sube mi rol **por "
               "encima** de los roles configurados en Ajustes del servidor → Roles y comprueba que tengo "
               "**Gestionar roles**.",
-        'de': "Ich konnte die Rollen von {count} Mitglied(ern) beim letzten Scan nicht ändern. Verschiebe "
+        'de': "Ich konnte die Rollen von {count} Mitglied(ern) seit dem letzten Scan nicht ändern. Verschiebe "
               "meine Rolle in den Servereinstellungen → Rollen **über** die konfigurierten Rollen und prüfe "
               "die Berechtigung **Rollen verwalten**.",
-        'it': "Non ho potuto aggiornare i ruoli di {count} membro/i durante l'ultima scansione. Sposta il mio "
+        'it': "Non ho potuto aggiornare i ruoli di {count} membro/i dall'ultima scansione. Sposta il mio "
               "ruolo **sopra** i ruoli configurati in Impostazioni server → Ruoli e verifica che io abbia "
               "**Gestire i ruoli**.",
-        'pt-BR': "Não consegui atualizar os cargos de {count} membro(s) no último escaneamento. Mova meu cargo "
+        'pt-BR': "Não consegui atualizar os cargos de {count} membro(s) desde o último escaneamento. Mova meu cargo "
                  "**acima** dos cargos configurados em Configurações do servidor → Cargos e confira se tenho "
                  "**Gerenciar cargos**.",
     },
