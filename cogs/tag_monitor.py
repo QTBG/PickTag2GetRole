@@ -6,6 +6,8 @@ import os
 from typing import Dict, Set, Optional, List
 import logging
 
+from tag_utils import is_unmatchable_tag
+
 logger = logging.getLogger('PickTag2GetRole.TagMonitor')
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -25,6 +27,8 @@ class TagMonitor(commands.Cog):
         self.bot = bot
         self.chunking_enabled = CHUNK_ENABLED_GUILDS
         self.member_cache: Dict[int, Set[int]] = {}  # guild_id -> member_ids ayant le tag (dernier scan)
+        self.permission_issues: Dict[int, int] = {}  # guild_id -> membres non modifiables (403)
+        self.invalid_tag_guilds: Set[int] = set()  # guild_id -> configuration impossible à satisfaire
         self._scan_locks: Dict[int, asyncio.Lock] = {}  # guild_id -> verrou anti-scans concurrents
         self._global_scan_lock = asyncio.Lock()
 
@@ -53,24 +57,62 @@ class TagMonitor(commands.Cog):
         members = self.member_cache.get(guild_id)
         return len(members) if members is not None else None
 
+    def _active_config(self, guild_id: int) -> Optional[tuple]:
+        """Configuration exploitable d'un serveur, ou None.
+
+        Renvoie None si la surveillance est désactivée, la configuration incomplète,
+        ou le tag impossible à satisfaire (typiquement une mention de rôle collée dans
+        le champ tag). Dans ce dernier cas le bot ne touche à AUCUN rôle : sinon il
+        conclurait que plus personne ne porte le tag et les retirerait à tout le serveur.
+        """
+        config = self.bot.get_guild_config_cached(guild_id)
+        if not config or not config.get('enabled', False):
+            return None
+
+        tag_to_watch = config.get('tag_to_watch')
+        role_ids = config.get('role_ids', [])
+        if not tag_to_watch or not role_ids:
+            return None
+
+        if is_unmatchable_tag(tag_to_watch):
+            if guild_id not in self.invalid_tag_guilds:
+                self.invalid_tag_guilds.add(guild_id)
+                logger.warning(
+                    "Guild %s: configured tag %r is a mention, not a server tag — "
+                    "monitoring paused for this guild to avoid mass role removal",
+                    guild_id, tag_to_watch
+                )
+            return None
+
+        self.invalid_tag_guilds.discard(guild_id)
+        return tag_to_watch, role_ids
+
+    def _note_permission_issue(self, guild_id: int):
+        """Comptabiliser un 403 et n'en logger qu'un seul par serveur"""
+        seen = self.permission_issues.get(guild_id, 0)
+        self.permission_issues[guild_id] = seen + 1
+        if seen == 0:
+            logger.warning(
+                "Guild %s: missing permissions to manage roles — my role is probably "
+                "below the configured roles, or I lack Manage Roles",
+                guild_id
+            )
+
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):
         """Nettoyer les caches en mémoire quand le bot quitte un serveur"""
         self.member_cache.pop(guild.id, None)
+        self.permission_issues.pop(guild.id, None)
+        self.invalid_tag_guilds.discard(guild.id)
         self._scan_locks.pop(guild.id, None)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         """Événement déclenché lors de la mise à jour d'un membre"""
-        config = self.bot.get_guild_config_cached(after.guild.id)
-        if not config or not config.get('enabled', False):
+        active = self._active_config(after.guild.id)
+        if not active:
             return
-
-        tag_to_watch = config.get('tag_to_watch')
-        role_ids = config.get('role_ids', [])
-
-        if not tag_to_watch or not role_ids:
-            return
+        tag_to_watch, role_ids = active
 
         # Vérifier si le tag a changé
         before_has_tag = self._member_has_tag(before, tag_to_watch)
@@ -83,15 +125,10 @@ class TagMonitor(commands.Cog):
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
         """Événement déclenché lors de la mise à jour de la présence (inclut primary_guild)"""
-        config = self.bot.get_guild_config_cached(after.guild.id)
-        if not config or not config.get('enabled', False):
+        active = self._active_config(after.guild.id)
+        if not active:
             return
-
-        tag_to_watch = config.get('tag_to_watch')
-        role_ids = config.get('role_ids', [])
-
-        if not tag_to_watch or not role_ids:
-            return
+        tag_to_watch, role_ids = active
 
         # Vérifier si le tag a changé
         before_has_tag = self._member_has_tag(before, tag_to_watch)
@@ -119,15 +156,10 @@ class TagMonitor(commands.Cog):
             if not member:
                 continue
 
-            config = self.bot.get_guild_config_cached(guild.id)
-            if not config or not config.get('enabled', False):
+            active = self._active_config(guild.id)
+            if not active:
                 continue
-
-            tag_to_watch = config.get('tag_to_watch')
-            role_ids = config.get('role_ids', [])
-
-            if not tag_to_watch or not role_ids:
-                continue
+            tag_to_watch, role_ids = active
 
             # Vérifier si le tag correspond maintenant
             has_tag = self._member_has_tag(member, tag_to_watch)
@@ -149,15 +181,10 @@ class TagMonitor(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         """Événement déclenché quand un membre rejoint le serveur"""
-        config = self.bot.get_guild_config_cached(member.guild.id)
-        if not config or not config.get('enabled', False):
+        active = self._active_config(member.guild.id)
+        if not active:
             return
-
-        tag_to_watch = config.get('tag_to_watch')
-        role_ids = config.get('role_ids', [])
-
-        if not tag_to_watch or not role_ids:
-            return
+        tag_to_watch, role_ids = active
 
         # Vérifier si le nouveau membre a le tag
         if self._member_has_tag(member, tag_to_watch):
@@ -218,15 +245,23 @@ class TagMonitor(commands.Cog):
                 await member.add_roles(*roles_to_add, reason="Server tag detected")
                 logger.debug("Added roles %s to member_id=%s", [r.id for r in roles_to_add], member.id)
                 changed = True
+            except discord.Forbidden:
+                # Rôle au-dessus du bot ou permission manquante : signalé une fois par
+                # serveur plutôt qu'une ligne d'erreur par membre
+                self._note_permission_issue(member.guild.id)
             except discord.HTTPException as e:
-                logger.error("Error adding roles to member_id=%s: %s", member.id, e)
+                logger.error("Error adding roles in guild_id=%s to member_id=%s: %s",
+                             member.guild.id, member.id, e)
         if roles_to_remove:
             try:
                 await member.remove_roles(*roles_to_remove, reason="Server tag removed")
                 logger.debug("Removed roles %s from member_id=%s", [r.id for r in roles_to_remove], member.id)
                 changed = True
+            except discord.Forbidden:
+                self._note_permission_issue(member.guild.id)
             except discord.HTTPException as e:
-                logger.error("Error removing roles from member_id=%s: %s", member.id, e)
+                logger.error("Error removing roles in guild_id=%s from member_id=%s: %s",
+                             member.guild.id, member.id, e)
 
         # Tenir à jour le compteur de membres taggés (stats)
         cache = self.member_cache.get(member.guild.id)
@@ -258,7 +293,14 @@ class TagMonitor(commands.Cog):
         if lock.locked():
             return None
 
+        if is_unmatchable_tag(tag_to_watch):
+            logger.warning("Guild %s: refusing to scan, configured tag %r is a mention",
+                           guild.id, tag_to_watch)
+            return None
+
         async with lock:
+            # Repartir d'un compteur neuf : /status doit refléter le dernier scan
+            self.permission_issues.pop(guild.id, None)
             await self.ensure_chunked(guild)
 
             async def iter_members():
@@ -303,21 +345,18 @@ class TagMonitor(commands.Cog):
 
         async with self._global_scan_lock:
             for guild in self.bot.guilds:
-                config = self.bot.get_guild_config_cached(guild.id)
-                if not config or not config.get('enabled', False):
+                active = self._active_config(guild.id)
+                if not active:
                     continue
-
-                tag_to_watch = config.get('tag_to_watch')
-                role_ids = config.get('role_ids', [])
-
-                if not tag_to_watch or not role_ids:
-                    continue
+                tag_to_watch, role_ids = active
 
                 try:
                     stats = await self.scan_guild(guild, tag_to_watch, role_ids)
                     if stats:
-                        logger.info("Guild %s: %s members checked, %s tagged, %s updated",
-                                    guild.id, stats['checked'], stats['tagged'], stats['updated'])
+                        blocked = self.permission_issues.get(guild.id, 0)
+                        logger.info("Guild %s: %s members checked, %s tagged, %s updated%s",
+                                    guild.id, stats['checked'], stats['tagged'], stats['updated'],
+                                    f", {blocked} blocked by permissions" if blocked else "")
                 except Exception as e:
                     logger.error("Error scanning guild %s: %s", guild.id, e)
 

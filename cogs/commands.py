@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from database import STATS_RETENTION_DAYS
 from i18n import t
+from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_suspiciously_long, is_unmatchable_tag
 
 logger = logging.getLogger('PickTag2GetRole.Commands')
 
@@ -56,6 +57,16 @@ class ConfigCommands(commands.Cog):
         if not tag or len(tag) > MAX_TAG_LENGTH:
             await interaction.response.send_message(
                 t(locale, 'config.invalid_tag', max=MAX_TAG_LENGTH),
+                ephemeral=True
+            )
+            return
+
+        # Erreur la plus fréquente : une mention de rôle collée dans le champ `tag`.
+        # Une telle valeur ne correspond à personne, donc la surveillance retirerait
+        # les rôles à tout le serveur — on refuse la configuration.
+        if is_role_mention(tag):
+            await interaction.response.send_message(
+                t(locale, 'config.tag_is_mention'),
                 ephemeral=True
             )
             return
@@ -132,6 +143,13 @@ class ConfigCommands(commands.Cog):
             embed.add_field(
                 name=t(locale, 'config.ignored_field'),
                 value="\n".join([f"• {r}" for r in rejected]),
+                inline=False
+            )
+        if is_suspiciously_long(tag):
+            embed.add_field(
+                name=t(locale, 'config.tag_long_warning_field'),
+                value=t(locale, 'config.tag_long_warning_text',
+                        max=DISCORD_TAG_MAX_LENGTH, length=len(tag)),
                 inline=False
             )
         if not guild.me.guild_permissions.manage_roles:
@@ -237,6 +255,22 @@ class ConfigCommands(commands.Cog):
             else t(locale, 'status.disabled'),
             inline=False
         )
+
+        # Diagnostics : ces deux cas rendent le bot inopérant sans rien dire
+        if is_unmatchable_tag(config.get('tag_to_watch')):
+            embed.color = discord.Color.red()
+            embed.add_field(
+                name=t(locale, 'status.invalid_tag_field'),
+                value=t(locale, 'status.invalid_tag_text'),
+                inline=False
+            )
+        blocked = tag_monitor.permission_issues.get(interaction.guild.id, 0) if tag_monitor else 0
+        if blocked:
+            embed.add_field(
+                name=t(locale, 'status.permission_field'),
+                value=t(locale, 'status.permission_text', count=blocked),
+                inline=False
+            )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
