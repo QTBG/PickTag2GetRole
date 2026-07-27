@@ -12,6 +12,7 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 - **Optimisé pour les ressources** : Conçu pour tourner sur des VPS avec 1 CPU et peu de RAM
 - **Événements en temps réel** : Utilise les événements Discord pour une réactivité maximale
 - **Vérification de sécurité** : Vérification au démarrage et une fois par jour pour garantir la cohérence
+- **Garde-fous anti-erreur** : Une configuration qui ne peut correspondre à aucun membre est refusée à la saisie et neutralisée à l'exécution — jamais de retrait de rôles en masse
 
 ## 📋 Prérequis
 
@@ -69,10 +70,13 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 ### Commandes disponibles
 
 - **`/config <tag> <@role1 @role2...>`** : Configure le tag à surveiller et les rôles à attribuer
-  - Exemple : `/config [TAG] @Membre @VIP`
+  - Exemple : `/config tag:VIP roles:@Membre @VIP`
+  - ⚠️ Le champ `tag` attend le **tag de serveur** : les 2 à 4 caractères affichés à côté des pseudos. Ce n'est **pas** une mention de rôle — coller un `@Rôle` ici est l'erreur la plus fréquente, et elle est désormais refusée
+  - Un tag de plus de 4 caractères est accepté mais signalé : il ne correspondra probablement à personne
+  - Un tag contenant `#` active la correspondance partielle (usage volontaire, non concerné par la limite de longueur)
   - Sécurité : impossible de configurer un rôle supérieur ou égal à votre rôle le plus élevé (ou à celui du bot)
   
-- **`/status`** : Affiche la configuration actuelle du bot et le nombre de membres ayant le tag
+- **`/status`** : Affiche la configuration actuelle du bot et le nombre de membres ayant le tag. Signale aussi les deux pannes silencieuses : tag invalide (surveillance en pause) et permissions insuffisantes (nombre de membres qui n'ont pas pu être mis à jour)
   
 - **`/toggle`** : Active ou désactive la surveillance des tags
   
@@ -86,14 +90,18 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 
 - **`/botstats`** : Statistiques globales du bot (réservé au propriétaire du bot) : serveurs, membres, uptime, RAM, latence, taille de la base
 
+- **`/help`** : Liste toutes les commandes disponibles, avec les liens cliquables vers la politique de confidentialité et les conditions d'utilisation
+
 ### Configuration initiale
 
 1. Inviter le bot sur votre serveur avec les permissions nécessaires
-2. Utiliser `/config` pour définir :
-   - Le tag à surveiller (exactement comme il apparaît)
+2. **Placer le rôle du bot au-dessus des rôles qu'il doit attribuer** (Paramètres du serveur → Rôles) : sans cela il ne pourra modifier personne
+3. Utiliser `/config` pour définir :
+   - Le tag à surveiller : le tag de serveur court (2 à 4 caractères), exactement comme il apparaît à côté des pseudos — **pas** une mention de rôle
    - Les rôles à attribuer (mentionner avec @)
-3. Utiliser `/scan` pour appliquer les rôles aux membres ayant déjà le tag
-4. Le bot surveillera ensuite automatiquement les changements
+4. Vérifier avec `/status` qu'aucun avertissement n'est signalé
+5. Utiliser `/scan` pour appliquer les rôles aux membres ayant déjà le tag
+6. Le bot surveillera ensuite automatiquement les changements
 
 ## 🔧 Configuration avancée
 
@@ -105,6 +113,8 @@ Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer 
 - `CHUNK_ENABLED_GUILDS` : `true` (défaut) charge en cache la liste complète des membres des serveurs où la surveillance est **activée**, pour une détection temps réel complète même sur les gros serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache — avec beaucoup de très gros serveurs, augmentez la limite mémoire Docker (ex: 384M/512M) ou mettez `false` (la détection reposera alors sur le scan quotidien et `/scan` pour les gros serveurs)
 - `BACKUP_ENABLED` : `true` (défaut) active la sauvegarde quotidienne de la base dans `data/backups/`
 - `BACKUP_KEEP` : Nombre de sauvegardes journalières conservées (défaut : 7)
+- `MEMORY_LIMIT` / `CPU_LIMIT` : Limites du conteneur, utilisées uniquement par `docker-compose.yml` (défauts : `512M` et `0.5`)
+- `HEARTBEAT_FILE` : Fichier touché toutes les minutes et lu par le HEALTHCHECK du conteneur (défaut : `/tmp/picktag_heartbeat`, rarement modifié)
 
 ### Base de données
 
@@ -186,6 +196,14 @@ docker run -d \
 ### Voir les logs
 ```bash
 docker logs picktag2getrole
+```
+
+### Healthcheck
+
+Le conteneur embarque un `HEALTHCHECK` : le bot touche `HEARTBEAT_FILE` toutes les minutes tant que la gateway Discord répond. Si le process se fige ou perd la connexion, le fichier cesse d'être mis à jour et le conteneur passe en `unhealthy` (fenêtre de 5 min, `start-period` de 30 s pour laisser le temps à la connexion initiale).
+
+```bash
+docker inspect --format '{{.State.Health.Status}}' picktag2getrole
 ```
 
 ### ⚠️ Migration depuis une ancienne version (conteneur root)
@@ -275,9 +293,28 @@ https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=26843
 - Pour des logs détaillés, définir `LOG_LEVEL=DEBUG` dans le fichier .env puis consulter bot.log (ou `docker logs`)
 - Lancer `/scan` pour forcer une resynchronisation immédiate
 
+### « monitoring paused for this guild » dans les logs
+
+```
+Guild 123...: configured tag '<@&456...>' is a mention, not a server tag —
+monitoring paused for this guild to avoid mass role removal
+```
+
+Une mention de rôle a été enregistrée dans le champ `tag`. Une telle valeur ne peut correspondre à aucun membre : sans garde-fou, le bot en conclurait que plus personne ne porte le tag et retirerait les rôles à tout le serveur. Il met donc la surveillance en pause et **ne touche à aucun rôle** jusqu'à correction.
+
+**Correctif** : relancer `/config` avec le tag de serveur court (ex. `tag:VIP`) et laisser les rôles dans le champ `roles`. `/status` affiche l'alerte tant que la configuration est cassée.
+
 ### Erreurs de permissions
-- Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer
+
+```
+Guild 123...: missing permissions to manage roles — my role is probably
+below the configured roles, or I lack Manage Roles
+```
+
+- Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer (Paramètres du serveur → Rôles, glisser le rôle du bot au-dessus)
 - Vérifier que le bot a la permission "Manage Roles"
+- `/status` indique combien de membres n'ont pas pu être mis à jour lors du dernier scan
+- Le message n'apparaît qu'une fois par serveur et par scan, pas une ligne par membre
 
 ### Utilisation CPU/RAM élevée
 - Augmenter l'intervalle de vérification dans `tag_monitor.py`
@@ -293,6 +330,8 @@ Ce projet est sous licence MIT.
 - [Terms of Service](TERMS_OF_SERVICE.md)
 - [Privacy Policy](PRIVACY_POLICY.md)
 
+Ces deux documents sont aussi accessibles directement depuis Discord via `/help`, sans quitter le serveur.
+
 ---
 
 # PickTag2GetRole (English)
@@ -307,6 +346,7 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 - **Resource optimized**: Designed to run on VPS with 1 CPU and low RAM
 - **Real-time events**: Uses Discord events for maximum responsiveness
 - **Safety verification**: Verification at startup and once daily to ensure consistency
+- **Misconfiguration safeguards**: A configuration that can never match any member is rejected at input and neutralized at runtime — no mass role removal, ever
 
 ## 📋 Prerequisites
 
@@ -364,10 +404,13 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 ### Available Commands
 
 - **`/config <tag> <@role1 @role2...>`**: Configure the tag to monitor and roles to assign
-  - Example: `/config [TAG] @Member @VIP`
+  - Example: `/config tag:VIP roles:@Member @VIP`
+  - ⚠️ The `tag` field expects the **server tag**: the 2-4 characters shown next to member names. It is **not** a role mention — pasting an `@Role` here is the most common mistake, and it is now rejected
+  - A tag longer than 4 characters is accepted but flagged: it most likely will never match anyone
+  - A tag containing `#` enables partial matching (an intentional use, exempt from the length limit)
   - Security: you cannot configure a role higher than or equal to your own highest role (or the bot's)
   
-- **`/status`**: Display current bot configuration and how many members have the tag
+- **`/status`**: Display current bot configuration and how many members have the tag. Also surfaces the two silent failure modes: invalid tag (monitoring paused) and missing permissions (how many members could not be updated)
   
 - **`/toggle`**: Enable or disable tag monitoring
   
@@ -381,14 +424,18 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 
 - **`/botstats`**: Global bot statistics (bot owner only): servers, members, uptime, RAM, latency, database size
 
+- **`/help`**: Lists all available commands, with clickable links to the privacy policy and terms of service
+
 ### Initial Setup
 
 1. Invite the bot to your server with necessary permissions
-2. Use `/config` to define:
-   - The tag to monitor (exactly as it appears)
+2. **Move the bot's role above the roles it must assign** (Server Settings → Roles): without this it cannot update anyone
+3. Use `/config` to define:
+   - The tag to monitor: the short server tag (2-4 characters), exactly as it appears next to member names — **not** a role mention
    - The roles to assign (mention with @)
-3. Use `/scan` to apply roles to members who already have the tag
-4. The bot will then automatically monitor changes
+4. Check with `/status` that no warning is reported
+5. Use `/scan` to apply roles to members who already have the tag
+6. The bot will then automatically monitor changes
 
 ## 🔧 Advanced Configuration
 
@@ -400,6 +447,8 @@ An ultra-optimized Discord bot for monitoring server tags and automatically assi
 - `CHUNK_ENABLED_GUILDS`: `true` (default) caches the full member list of servers where monitoring is **enabled**, for complete real-time detection even on large servers (>250 members). Cost: ~1 KB of RAM per cached member — with many very large servers, raise the Docker memory limit (e.g. 384M/512M) or set `false` (large servers will then rely on the daily scan and `/scan`)
 - `BACKUP_ENABLED`: `true` (default) enables the daily database backup into `data/backups/`
 - `BACKUP_KEEP`: Number of daily backup files to keep (default: 7)
+- `MEMORY_LIMIT` / `CPU_LIMIT`: Container limits, used by `docker-compose.yml` only (defaults: `512M` and `0.5`)
+- `HEARTBEAT_FILE`: File touched every minute and read by the container HEALTHCHECK (default: `/tmp/picktag_heartbeat`, rarely changed)
 
 ### Database
 
@@ -481,6 +530,14 @@ docker run -d \
 ### View logs
 ```bash
 docker logs picktag2getrole
+```
+
+### Healthcheck
+
+The container ships a `HEALTHCHECK`: the bot touches `HEARTBEAT_FILE` every minute for as long as the Discord gateway responds. If the process freezes or loses its connection, the file stops being updated and the container turns `unhealthy` (5 min window, 30 s `start-period` to allow for the initial connection).
+
+```bash
+docker inspect --format '{{.State.Health.Status}}' picktag2getrole
 ```
 
 ### ⚠️ Migrating from an older version (root container)
@@ -570,9 +627,28 @@ https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436
 - For detailed logs, set `LOG_LEVEL=DEBUG` in the .env file then check bot.log (or `docker logs`)
 - Run `/scan` to force an immediate resynchronization
 
+### "monitoring paused for this guild" in the logs
+
+```
+Guild 123...: configured tag '<@&456...>' is a mention, not a server tag —
+monitoring paused for this guild to avoid mass role removal
+```
+
+A role mention was stored in the `tag` field. Such a value can never match any member: without a safeguard, the bot would conclude nobody carries the tag anymore and strip the roles from the whole server. It therefore pauses monitoring and **touches no role at all** until the configuration is fixed.
+
+**Fix**: run `/config` again with the short server tag (e.g. `tag:VIP`) and leave the roles in the `roles` field. `/status` keeps showing the alert for as long as the configuration is broken.
+
 ### Permission errors
-- The bot must have a role higher than the roles it's trying to assign
+
+```
+Guild 123...: missing permissions to manage roles — my role is probably
+below the configured roles, or I lack Manage Roles
+```
+
+- The bot must have a role higher than the roles it's trying to assign (Server Settings → Roles, drag the bot's role above them)
 - Check that the bot has the "Manage Roles" permission
+- `/status` reports how many members could not be updated during the last scan
+- The message appears once per server per scan, not one line per member
 
 ### High CPU/RAM usage
 - Increase the verification interval in `tag_monitor.py`
@@ -587,3 +663,5 @@ This project is under MIT license.
 
 - [Terms of Service](TERMS_OF_SERVICE.md)
 - [Privacy Policy](PRIVACY_POLICY.md)
+
+Both documents are also reachable straight from Discord via `/help`, without leaving the server.
