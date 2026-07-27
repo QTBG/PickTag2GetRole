@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from database import STATS_RETENTION_DAYS
 from i18n import t
-from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_suspiciously_long, is_unmatchable_tag
+from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_unmatchable_tag
 
 logger = logging.getLogger('PickTag2GetRole.Commands')
 
@@ -71,6 +71,17 @@ class ConfigCommands(commands.Cog):
         if is_role_mention(tag):
             await interaction.response.send_message(
                 t(locale, 'config.tag_is_mention'),
+                ephemeral=True
+            )
+            return
+
+        # Un tag de serveur Discord fait au plus 4 caractères : au-delà, aucune
+        # correspondance n'est possible (y compris partielle). Même conséquence
+        # qu'une mention — retrait des rôles à tout le serveur — même refus.
+        if len(tag) > DISCORD_TAG_MAX_LENGTH:
+            await interaction.response.send_message(
+                t(locale, 'config.tag_too_long',
+                  max=DISCORD_TAG_MAX_LENGTH, length=len(tag)),
                 ephemeral=True
             )
             return
@@ -147,13 +158,6 @@ class ConfigCommands(commands.Cog):
             embed.add_field(
                 name=t(locale, 'config.ignored_field'),
                 value="\n".join([f"• {r}" for r in rejected]),
-                inline=False
-            )
-        if is_suspiciously_long(tag):
-            embed.add_field(
-                name=t(locale, 'config.tag_long_warning_field'),
-                value=t(locale, 'config.tag_long_warning_text',
-                        max=DISCORD_TAG_MAX_LENGTH, length=len(tag)),
                 inline=False
             )
         if not guild.me.guild_permissions.manage_roles:
@@ -265,7 +269,7 @@ class ConfigCommands(commands.Cog):
             embed.color = discord.Color.red()
             embed.add_field(
                 name=t(locale, 'status.invalid_tag_field'),
-                value=t(locale, 'status.invalid_tag_text'),
+                value=t(locale, 'status.invalid_tag_text', max=DISCORD_TAG_MAX_LENGTH),
                 inline=False
             )
         blocked = len(tag_monitor.permission_issues.get(interaction.guild.id, ())) if tag_monitor else 0
@@ -373,7 +377,7 @@ class ConfigCommands(commands.Cog):
         # le vrai diagnostic et le correctif à la place
         if is_unmatchable_tag(tag_to_watch):
             await interaction.response.send_message(
-                t(locale, 'status.invalid_tag_text'),
+                t(locale, 'status.invalid_tag_text', max=DISCORD_TAG_MAX_LENGTH),
                 ephemeral=True
             )
             return
