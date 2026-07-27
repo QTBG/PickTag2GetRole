@@ -450,6 +450,12 @@ class TagMonitor(commands.Cog):
     async def daily_check(self):
         """Tâche quotidienne pour vérifier les tags"""
         logger.info("Starting daily tag verification...")
+        # Purge globale des stats expirées : record_tag_stat ne purge que les
+        # serveurs scannés, un serveur désactivé ou en pause y échapperait
+        try:
+            await self.bot.db.purge_expired_stats()
+        except Exception as e:
+            logger.error("Error purging expired stats: %s", e)
         await self.check_all_tags()
         logger.info("Daily tag verification completed")
 

@@ -177,6 +177,26 @@ RESPONSES: dict[str, dict[str, str]] = {
         'it': "❌ Non sei autorizzato a usare questo comando.",
         'pt-BR': "❌ Você não tem permissão para usar este comando.",
     },
+    'err.config_unreadable': {
+        'en': "⚠️ This server's stored configuration can no longer be read (encryption key changed "
+              "or data corrupted). Run `/config` to set it up again, or `/reset` to delete all "
+              "stored data for this server.",
+        'fr': "⚠️ La configuration enregistrée pour ce serveur ne peut plus être lue (clé de "
+              "chiffrement changée ou données corrompues). Relancez `/config` pour la recréer, ou "
+              "`/reset` pour supprimer toutes les données de ce serveur.",
+        'es': "⚠️ La configuración guardada de este servidor ya no se puede leer (clave de cifrado "
+              "cambiada o datos dañados). Ejecuta `/config` para configurarla de nuevo, o `/reset` "
+              "para borrar todos los datos de este servidor.",
+        'de': "⚠️ Die gespeicherte Konfiguration dieses Servers kann nicht mehr gelesen werden "
+              "(Schlüssel geändert oder Daten beschädigt). Führe `/config` aus, um sie neu "
+              "anzulegen, oder `/reset`, um alle Daten dieses Servers zu löschen.",
+        'it': "⚠️ La configurazione salvata di questo server non può più essere letta (chiave di "
+              "cifratura cambiata o dati danneggiati). Esegui `/config` per ricrearla, o `/reset` "
+              "per eliminare tutti i dati di questo server.",
+        'pt-BR': "⚠️ A configuração salva deste servidor não pode mais ser lida (chave de "
+                 "criptografia alterada ou dados corrompidos). Use `/config` para configurá-la "
+                 "novamente, ou `/reset` para apagar todos os dados deste servidor.",
+    },
     'err.generic': {
         'en': "❌ An error occurred while executing the command.",
         'fr': "❌ Une erreur est survenue lors de l'exécution de la commande.",

@@ -145,6 +145,12 @@ class PickTag2GetRole(commands.Bot):
             message = t(locale, 'err.guild_only')
         elif isinstance(error, discord.app_commands.CheckFailure):
             message = t(locale, 'err.not_allowed')
+        elif (isinstance(error, discord.app_commands.CommandInvokeError)
+              and isinstance(error.original, EncryptionKeyError)):
+            # Config stockée illisible (clé changée, jeton corrompu) : donner la
+            # sortie à l'admin (/config ou /reset) au lieu d'une erreur générique
+            logger.error(f"Unreadable stored config in guild {interaction.guild_id}: {error.original}")
+            message = t(locale, 'err.config_unreadable')
         else:
             logger.error(f"Command error: {error}")
             message = t(locale, 'err.generic')
@@ -232,6 +238,26 @@ async def on_ready():
             logger.info(f"{len(synced)} commands synced")
         except Exception as e:
             logger.error(f"Error syncing commands: {e}")
+
+    # Purger les données des serveurs qui ont retiré le bot pendant qu'il
+    # n'écoutait pas : Discord ne rejoue pas un GUILD_DELETE manqué, que ce
+    # soit parce que le process était éteint OU parce que la session gateway a
+    # été invalidée (re-IDENTIFY) — d'où une exécution à CHAQUE on_ready, pas
+    # seulement au premier. C'est sûr : READY liste toujours toutes les guilds,
+    # y compris les indisponibles (panne Discord), qui ne sont donc jamais
+    # considérées comme orphelines. La privacy policy promet cette suppression.
+    try:
+        present = {g.id for g in bot.guilds}
+        orphans = [gid for gid in await bot.db.get_all_guild_ids() if gid not in present]
+        for gid in orphans:
+            await bot.db.delete_guild_config(gid)
+            async with bot.cache_lock:
+                bot.config_cache.pop(gid, None)
+        if orphans:
+            logger.info(f"Removed stored data for {len(orphans)} guild(s) "
+                        f"that removed the bot while it was offline")
+    except Exception as e:
+        logger.error(f"Error reconciling stored guilds: {e}")
 
 async def main():
     """Fonction principale pour lancer le bot"""
