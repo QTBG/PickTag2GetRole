@@ -22,8 +22,14 @@ USER botuser
 
 # Le bot met à jour un fichier de heartbeat tant que la gateway Discord répond.
 # Si le process se fige ou perd la connexion, le conteneur passe "unhealthy".
-HEALTHCHECK --interval=60s --timeout=10s --start-period=180s --retries=3 \
-    CMD python -c "import os,sys,time; p=os.getenv('HEARTBEAT_FILE','/tmp/picktag_heartbeat'); sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 300 else 1)"
+#
+# interval court (10s) : le premier contrôle n'a lieu qu'après un intervalle,
+# et les orchestrateurs (Dokploy, Swarm) attendent l'état "healthy" pour valider
+# un déploiement — avec un intervalle long, le déploiement expire avant.
+# Le contrôle utilise `find` plutôt qu'un interpréteur Python : ~2 ms au lieu
+# de ~40 ms, ce qui compte à cette fréquence sur un petit VPS.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
+    CMD find "${HEARTBEAT_FILE:-/tmp/picktag_heartbeat}" -newermt '-300 seconds' 2>/dev/null | grep -q .
 
 # Commande pour lancer le bot
 CMD ["python", "-u", "bot.py"]
