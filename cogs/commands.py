@@ -1,4 +1,5 @@
 import discord
+from contextlib import asynccontextmanager
 from discord import app_commands
 from discord.ext import commands
 import logging
@@ -8,7 +9,6 @@ import re
 import time
 from datetime import date, datetime, timedelta, timezone
 
-from crypto import EncryptionKeyError
 from database import STATS_RETENTION_DAYS
 from i18n import t
 from tag_utils import DISCORD_TAG_MAX_LENGTH, is_role_mention, is_unmatchable_tag
@@ -47,12 +47,22 @@ class ConfigCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @asynccontextmanager
+    async def _configuration_change(self, guild_id: int):
+        monitor = self.bot.get_cog('TagMonitor')
+        if monitor is None:
+            yield
+        else:
+            async with monitor.configuration_change(guild_id):
+                yield
+
     @app_commands.command(name="config", description="Configure the bot to monitor a server tag")
     @app_commands.describe(
-        tag="The server tag to monitor",
+        tag="This server's own tag to monitor",
         roles="Roles to assign (mention roles separated by spaces)"
     )
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def config(self, interaction: discord.Interaction, tag: str, roles: str):
         """Configure the tag to monitor and roles to assign"""
@@ -67,7 +77,7 @@ class ConfigCommands(commands.Cog):
 
         # Erreur la plus fréquente : une mention de rôle collée dans le champ `tag`.
         # Une telle valeur ne correspond à personne, donc la surveillance retirerait
-        # les rôles à tout le serveur — on refuse la configuration.
+        # les rôles à tout le serveur - on refuse la configuration.
         if is_role_mention(tag):
             await interaction.response.send_message(
                 t(locale, 'config.tag_is_mention'),
@@ -76,8 +86,8 @@ class ConfigCommands(commands.Cog):
             return
 
         # Un tag de serveur Discord fait au plus 4 caractères : au-delà, aucune
-        # correspondance n'est possible (y compris partielle). Même conséquence
-        # qu'une mention — retrait des rôles à tout le serveur — même refus.
+        # correspondance n'est possible. Même conséquence
+        # qu'une mention - retrait des rôles à tout le serveur - même refus.
         if len(tag) > DISCORD_TAG_MAX_LENGTH:
             await interaction.response.send_message(
                 t(locale, 'config.tag_too_long',
@@ -108,13 +118,13 @@ class ConfigCommands(commands.Cog):
             if role is None:
                 continue
             if role.is_default() or role.managed:
-                rejected.append(f"{role.name} — {t(locale, 'config.reject_managed')}")
+                rejected.append(f"{role.name} - {t(locale, 'config.reject_managed')}")
                 continue
             if role >= guild.me.top_role:
-                rejected.append(f"{role.name} — {t(locale, 'config.reject_above_bot')}")
+                rejected.append(f"{role.name} - {t(locale, 'config.reject_above_bot')}")
                 continue
             if not is_owner and role >= invoker.top_role:
-                rejected.append(f"{role.name} — {t(locale, 'config.reject_above_you')}")
+                rejected.append(f"{role.name} - {t(locale, 'config.reject_above_you')}")
                 continue
             role_ids.append(role_id)
             role_names.append(role.name)
@@ -141,7 +151,12 @@ class ConfigCommands(commands.Cog):
             'enabled': True
         }
 
-        await self.bot.set_guild_config(interaction.guild.id, config)
+        await interaction.response.defer(ephemeral=True)
+        async with self._configuration_change(guild.id):
+            if self.bot.get_guild(guild.id) is not guild:
+                await interaction.followup.send(t(locale, 'scan.cancelled'), ephemeral=True)
+                return
+            await self.bot.set_guild_config(guild.id, config)
 
         # Réponse
         embed = discord.Embed(
@@ -167,7 +182,7 @@ class ConfigCommands(commands.Cog):
                 inline=False
             )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Charger le cache des membres pour la détection temps réel (après la réponse
         # pour ne pas la retarder sur les gros serveurs)
@@ -177,38 +192,25 @@ class ConfigCommands(commands.Cog):
 
     @app_commands.command(name="reset", description="Delete this server's configuration and stored data")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def reset(self, interaction: discord.Interaction):
         """Delete all stored data for this server"""
         locale = interaction.locale
-        try:
-            config = await self.bot.get_guild_config(interaction.guild.id)
-        except (EncryptionKeyError, ValueError, TypeError):
-            # Ligne illisible (clé changée, jeton corrompu) ou au JSON cassé :
-            # la suppression, elle, n'a besoin ni de déchiffrer ni de parser.
-            # /reset doit rester la porte de sortie — la privacy policy promet
-            # une suppression immédiate.
-            config = True
-
-        if not config:
-            await interaction.response.send_message(
-                t(locale, 'common.no_config'),
-                ephemeral=True
-            )
-            return
-
-        await self.bot.db.delete_guild_config(interaction.guild.id)
-        async with self.bot.cache_lock:
-            self.bot.config_cache.pop(interaction.guild.id, None)
-
+        await interaction.response.defer(ephemeral=True)
         tag_monitor = self.bot.get_cog('TagMonitor')
         if tag_monitor:
-            tag_monitor.member_cache.pop(interaction.guild.id, None)
+            await tag_monitor.delete_guild_data(interaction.guild.id)
+        else:
+            async with self.bot.cache_lock:
+                self.bot.config_cache.pop(interaction.guild.id, None)
+            await self.bot.db.delete_guild_config(interaction.guild.id)
 
-        await interaction.response.send_message(t(locale, 'reset.done'), ephemeral=True)
+        await interaction.followup.send(t(locale, 'reset.done'), ephemeral=True)
 
     @app_commands.command(name="status", description="View the current bot configuration")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def status(self, interaction: discord.Interaction):
         """Display current configuration"""
@@ -291,25 +293,22 @@ class ConfigCommands(commands.Cog):
 
     @app_commands.command(name="toggle", description="Enable or disable tag monitoring")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def toggle(self, interaction: discord.Interaction):
         """Enable/disable the bot for this server"""
         locale = interaction.locale
-        config = await self.bot.get_guild_config(interaction.guild.id)
-
-        if not config:
-            await interaction.response.send_message(
-                t(locale, 'toggle.no_config'),
-                ephemeral=True
-            )
-            return
-
-        # Inverser l'état
-        config['enabled'] = not config.get('enabled', False)
-        await self.bot.set_guild_config(interaction.guild.id, config)
+        await interaction.response.defer(ephemeral=True)
+        async with self._configuration_change(interaction.guild.id):
+            config = await self.bot.get_guild_config(interaction.guild.id)
+            if not config or self.bot.get_guild(interaction.guild.id) is not interaction.guild:
+                await interaction.followup.send(t(locale, 'toggle.no_config'), ephemeral=True)
+                return
+            config['enabled'] = not config.get('enabled', False)
+            await self.bot.set_guild_config(interaction.guild.id, config)
 
         message_key = 'toggle.enabled_msg' if config['enabled'] else 'toggle.disabled_msg'
-        await interaction.response.send_message(t(locale, message_key), ephemeral=True)
+        await interaction.followup.send(t(locale, message_key), ephemeral=True)
 
         if config['enabled']:
             tag_monitor = self.bot.get_cog('TagMonitor')
@@ -357,6 +356,7 @@ class ConfigCommands(commands.Cog):
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 60.0, key=lambda i: i.guild_id)
+    @app_commands.checks.has_permissions(manage_roles=True)
     async def scan(self, interaction: discord.Interaction):
         """Force an immediate scan of all members"""
         locale = interaction.locale
@@ -380,7 +380,7 @@ class ConfigCommands(commands.Cog):
             return
 
         # Tag invalide stocké avant les garde-fous : scan_guild refuserait en
-        # silence et l'admin recevrait « un scan est déjà en cours » — donner
+        # silence et l'admin recevrait « un scan est déjà en cours » - donner
         # le vrai diagnostic et le correctif à la place
         if is_unmatchable_tag(tag_to_watch):
             await interaction.response.send_message(
@@ -400,11 +400,14 @@ class ConfigCommands(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        logger.info(f"Starting manual scan for guild {interaction.guild.id}")
+        logger.info("Starting a manual tag scan")
         stats = await tag_monitor.scan_guild(interaction.guild, tag_to_watch, role_ids)
 
         if stats is None:
             await interaction.followup.send(t(locale, 'scan.in_progress'), ephemeral=True)
+            return
+        if stats.get('cancelled'):
+            await interaction.followup.send(t(locale, 'scan.cancelled'), ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -415,8 +418,7 @@ class ConfigCommands(commands.Cog):
                           updated=stats['updated'], tag=tag_to_watch)
         )
 
-        logger.info(f"Manual scan completed for guild {interaction.guild.id}: "
-                    f"{stats['checked']} scanned, {stats['tagged']} with tag, {stats['updated']} updated")
+        logger.info("Manual scan completed")
 
         try:
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -428,6 +430,7 @@ class ConfigCommands(commands.Cog):
     @app_commands.command(name="check", description="Check a specific member's tag status")
     @app_commands.describe(member="The member to check")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def check_member(self, interaction: discord.Interaction, member: discord.Member):
         """Check if a specific member has the configured tag"""
@@ -494,11 +497,12 @@ class ConfigCommands(commands.Cog):
 
     @app_commands.command(name="stats", description="View tag statistics for this server")
     @app_commands.default_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.guild_only()
     async def stats(self, interaction: discord.Interaction):
         """Evolution of tagged member counts for this server"""
         locale = interaction.locale
-        rows = await self.bot.db.get_tag_stats(interaction.guild.id, days=30)
+        rows = await self.bot.db.get_tag_stats(interaction.guild.id, days=31)
 
         if not rows:
             await interaction.response.send_message(t(locale, 'stats.no_data'), ephemeral=True)
@@ -534,7 +538,7 @@ class ConfigCommands(commands.Cog):
         if len(values) >= 2:
             embed.add_field(
                 name=t(locale, 'stats.trend', days=len(values)),
-                value=f"`{_sparkline(values)}` {min(values)}–{max(values)}",
+                value=f"`{_sparkline(values)}` {min(values)}-{max(values)}",
                 inline=False
             )
 

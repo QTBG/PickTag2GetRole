@@ -1,0 +1,10 @@
+[project]
+name = "picktag2getrole"
+version = "1.0.0"
+requires-python = ">=3.14"
+dependencies = [
+    "discord.py>=2.7,<3",
+    "python-dotenv>=1.1,<2",
+    "aiosqlite>=0.21,<0.22",
+    "cryptography>=46,<48",
+]
