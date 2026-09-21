@@ -1,709 +1,397 @@
 # PickTag2GetRole
 
-Un bot Discord ultra-optimisé pour surveiller les tags de serveur et attribuer automatiquement des rôles aux utilisateurs. Conçu pour fonctionner sur des VPS très légers avec un seul cœur CPU.
+Un bot Discord qui attribue et retire des rôles aux membres affichant le tag public de leur serveur. Il utilise **Server Members comme seul intent privilégié**, sans Presence ni Message Content.
 
 *[English version below](#picktag2getrole-english)*
 
-## 🚀 Fonctionnalités
+## Fonctionnement
 
-- **Surveillance automatique des tags** : Détecte quand un utilisateur ajoute ou retire un tag de serveur
-- **Attribution de rôles automatique** : Ajoute/retire des rôles en fonction de la présence du tag
-- **Commandes slash intuitives** : Configuration facile via Discord
-- **Optimisé pour les ressources** : Conçu pour tourner sur des VPS avec 1 CPU et peu de RAM
-- **Événements en temps réel** : Utilise les événements Discord pour une réactivité maximale
-- **Vérification de sécurité** : Vérification au démarrage et une fois par jour pour garantir la cohérence
-- **Garde-fous anti-erreur** : Une configuration qui ne peut correspondre à aucun membre est refusée à la saisie et neutralisée à l'exécution — jamais de retrait de rôles en masse
+Un membre reçoit les rôles configurés lorsque son identité de serveur est affichée publiquement, que son serveur d'origine est le serveur surveillé et que le texte du tag correspond, sans distinction de casse. Un tag identique provenant d'un autre serveur ne donne pas accès aux rôles. Les correspondances partielles avec `#` ne sont pas prises en charge.
 
-## 📋 Prérequis
+Les événements de mise à jour des membres permettent de réagir aux changements de tag. Un scan au démarrage, un scan quotidien et `/scan` réconcilient les rôles après des changements manqués. Le bot ne lit pas les messages, les jeux ou le statut en ligne des membres.
 
-- Python 3.11+ ou Docker
-- Un bot Discord avec son token (voir section "Obtenir le token du bot")
-- Permissions du bot : 
-  - Gérer les rôles
-  - Voir les membres du serveur
-  - Lire les informations du serveur
+## Installation
 
-## 🛠️ Installation
+Prérequis : Docker, ou [uv](https://docs.astral.sh/uv/) pour une installation directe avec Python 3.14. Le bot doit disposer de **Manage Roles** et son rôle doit être placé au-dessus des rôles à attribuer.
 
-### Option 1 : Avec Docker (Recommandé)
-
-1. **Cloner le projet**
-   ```bash
-   git clone https://github.com/QTBG/PickTag2GetRole.git
-   cd PickTag2GetRole
-   ```
-
-2. **Configurer le bot**
-   ```bash
-   cp .env.example .env
-   ```
-   Éditer `.env` et ajouter votre token Discord :
-   ```
-   DISCORD_TOKEN=votre_token_ici
-   ```
-
-3. **Lancer avec Docker Compose**
-   ```bash
-   docker-compose up -d
-   ```
-
-### Option 2 : Sans Docker
-
-1. **Installer les dépendances**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configurer le bot**
-   ```bash
-   cp .env.example .env
-   # Éditer .env avec votre token
-   ```
-
-3. **Lancer le bot**
-   ```bash
-   python bot.py
-   ```
-
-## 🎮 Utilisation
-
-### Commandes disponibles
-
-- **`/config <tag> <@role1 @role2...>`** : Configure le tag à surveiller et les rôles à attribuer
-  - Exemple : `/config tag:VIP roles:@Membre @VIP`
-  - ⚠️ Le champ `tag` attend le **tag de serveur** : les 2 à 4 caractères affichés à côté des pseudos. Ce n'est **pas** une mention de rôle — coller un `@Rôle` ici est l'erreur la plus fréquente, et elle est refusée
-  - Un tag de plus de 4 caractères est refusé : les tags de serveur Discord font 4 caractères maximum, il ne pourrait donc correspondre à personne
-  - Un tag contenant `#` active la correspondance partielle (usage volontaire)
-  - Sécurité : impossible de configurer un rôle supérieur ou égal à votre rôle le plus élevé (ou à celui du bot)
-  
-- **`/status`** : Affiche la configuration actuelle du bot et le nombre de membres ayant le tag. Signale aussi les deux pannes silencieuses : tag invalide (surveillance en pause) et permissions insuffisantes (nombre de membres qui n'ont pas pu être mis à jour)
-  
-- **`/toggle`** : Active ou désactive la surveillance des tags
-  
-- **`/scan`** : Force un scan immédiat de tous les membres (utile après la configuration initiale, cooldown de 60s)
-
-- **`/check <@membre>`** : Vérifie le statut du tag d'un membre spécifique
-
-- **`/stats`** : Évolution du nombre de membres avec le tag (7 jours, 30 jours, mini-graphe). Compteurs agrégés uniquement, aucun ID utilisateur stocké
-
-- **`/reset`** : Supprime la configuration et toutes les données stockées pour ce serveur
-
-- **`/botstats`** : Statistiques globales du bot (réservé au propriétaire du bot) : serveurs, membres, uptime, RAM, latence, taille de la base
-
-- **`/help`** : Liste toutes les commandes disponibles, avec les liens cliquables vers la politique de confidentialité et les conditions d'utilisation
-
-### Configuration initiale
-
-1. Inviter le bot sur votre serveur avec les permissions nécessaires
-2. **Placer le rôle du bot au-dessus des rôles qu'il doit attribuer** (Paramètres du serveur → Rôles) : sans cela il ne pourra modifier personne
-3. Utiliser `/config` pour définir :
-   - Le tag à surveiller : le tag de serveur court (2 à 4 caractères), exactement comme il apparaît à côté des pseudos — **pas** une mention de rôle
-   - Les rôles à attribuer (mentionner avec @)
-4. Vérifier avec `/status` qu'aucun avertissement n'est signalé
-5. Utiliser `/scan` pour appliquer les rôles aux membres ayant déjà le tag
-6. Le bot surveillera ensuite automatiquement les changements
-
-## 🔧 Configuration avancée
-
-### Variables d'environnement
-
-- `DISCORD_TOKEN` : Token du bot Discord (obligatoire)
-- `LOG_LEVEL` : Niveau de logging (optionnel, défaut: INFO). Valeurs possibles : DEBUG, INFO, WARNING, ERROR
-- `LOG_FILE` : Chemin du fichier de log (optionnel, défaut: `bot.log`, rotation automatique 5 Mo × 3). Mettre une valeur vide pour ne logger que sur stdout (recommandé sous Docker)
-- `CHUNK_ENABLED_GUILDS` : `true` (défaut) charge en cache la liste complète des membres des serveurs où la surveillance est **activée**, pour une détection temps réel complète même sur les gros serveurs (>250 membres). Coût : ~1 Ko de RAM par membre mis en cache — avec beaucoup de très gros serveurs, augmentez la limite mémoire Docker (ex: 384M/512M) ou mettez `false` (la détection reposera alors sur le scan quotidien et `/scan` pour les gros serveurs)
-- `ENCRYPTION_KEY` : Clé Fernet activant le **chiffrement au repos** des valeurs stockées (recommandé, voir la section dédiée). Vide = stockage en clair
-- `BACKUP_ENABLED` : `true` (défaut) active la sauvegarde quotidienne de la base dans `data/backups/`
-- `BACKUP_KEEP` : Nombre de sauvegardes journalières conservées (défaut : 7)
-- `MEMORY_LIMIT` / `CPU_LIMIT` : Limites du conteneur, utilisées uniquement par `docker-compose.yml` (défauts : `512M` et `0.5`)
-- `HEARTBEAT_FILE` : Fichier touché toutes les minutes et lu par le HEALTHCHECK du conteneur (défaut : `/tmp/picktag_heartbeat`, rarement modifié)
-
-### Base de données
-
-Le bot utilise une base de données SQLite (`data/bot_data.db`) pour stocker les configurations de manière sécurisée. Le fichier de base de données est stocké dans un dossier `data/` qui est créé automatiquement. Chaque serveur a ses propres données isolées :
-- Les tags surveillés par serveur
-- Les rôles à attribuer
-- L'état d'activation du bot
-
-**Sécurité & Confidentialité** :
-- Chaque serveur n'a accès qu'à ses propres données
-- Les données sont automatiquement supprimées quand le bot est retiré d'un serveur
-
-### Chiffrement au repos
-
-Avec `ENCRYPTION_KEY` définie, toutes les **valeurs** stockées sont chiffrées avec Fernet (AES-128-CBC + HMAC-SHA256) : tag surveillé, IDs de rôles et compteurs journaliers. Les identifiants qui servent de clés (ID de serveur, date) restent en clair pour rester indexables.
-
-Une copie du fichier de base, ou d'une sauvegarde, est donc inexploitable sans la clé.
-
-**Générer une clé** :
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+git clone https://github.com/QTBG/PickTag2GetRole.git
+cd PickTag2GetRole
+cp .env.example .env
 ```
-Renseignez-la ensuite dans `ENCRYPTION_KEY` (variable d'environnement, jamais dans le volume de données).
 
-**Migration** : au premier démarrage avec une clé, les données existantes en clair sont chiffrées automatiquement. L'opération est idempotente et ne perd aucune configuration.
+### Avec Docker
 
-⚠️ **Conservez la clé hors du serveur.** Sans elle, une base déjà chiffrée (et ses sauvegardes) est irrécupérable. Le bot refuse de démarrer si la clé est absente, incorrecte ou malformée, plutôt que de tourner avec des données illisibles et d'écraser des configurations valides.
+Construire l'image, puis générer une clé de chiffrement pour une **nouvelle installation** :
 
-Sans `ENCRYPTION_KEY`, le bot fonctionne en clair : les installations auto-hébergées existantes ne sont pas cassées. `/botstats` indique l'état du chiffrement.
-
-### Sauvegardes automatiques
-
-Le bot sauvegarde automatiquement sa base SQLite pour se protéger d'une corruption :
-
-- **Quand** : au démarrage puis toutes les 24 h
-- **Où** : `data/backups/bot_data-YYYYMMDD.db` (un fichier par jour, les `BACKUP_KEEP` plus récents conservés, 7 par défaut)
-- **Comment** : API de sauvegarde en ligne de SQLite — snapshot cohérent même pendant les écritures (un simple `cp` d'une base WAL active ne l'est pas), écriture atomique
-- **Contrôle d'intégrité** : `PRAGMA quick_check` avant chaque sauvegarde. En cas d'échec, le bot n'écrase **ni ne purge** les sauvegardes saines existantes et logge une erreur bien visible (visible aussi dans `/botstats`)
-
-**Restauration** (le volume Docker `picktag_data` contient `bot_data.db` et `backups/`) :
 ```bash
-docker compose down                                            # ou arrêter l'app dans Dokploy
+docker build -t picktag2getrole .
+docker run --rm --entrypoint python picktag2getrole -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Renseigner les deux variables obligatoires dans `.env` :
+
+```dotenv
+DISCORD_TOKEN=votre_token
+ENCRYPTION_KEY=votre_cle_fernet
+```
+
+Conserver la clé dans un gestionnaire de secrets, avec une copie de récupération protégée. Pour mettre à jour une installation déjà chiffrée, **garder sa clé existante**.
+
+```bash
+docker compose up -d
+```
+
+### Sans Docker
+
+```bash
+uv sync --locked
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Renseigner `DISCORD_TOKEN` et `ENCRYPTION_KEY` dans `.env`, puis lancer :
+
+```bash
+uv run python bot.py
+```
+
+## Configuration Discord
+
+1. Créer l'application dans le [Developer Portal](https://discord.com/developers/applications), puis récupérer son token dans **Bot**.
+2. Dans **Privileged Gateway Intents**, activer uniquement **SERVER MEMBERS INTENT**. **PRESENCE INTENT** et **MESSAGE CONTENT INTENT** ne sont pas utilisés.
+3. Dans **OAuth2 > URL Generator**, sélectionner les scopes `bot` et `applications.commands`, puis la permission **Manage Roles** uniquement.
+4. Inviter le bot et placer son rôle au-dessus des rôles qu'il devra gérer.
+
+Exemple de lien d'invitation :
+
+```text
+https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=268435456&scope=bot%20applications.commands
+```
+
+**Guilds** est également activé dans le code ; il ne s'agit pas d'un intent privilégié. **View Channels**, **Administrator** et les permissions de lecture ou d'envoi de messages ne sont pas nécessaires. Une nouvelle version ne retire pas automatiquement les anciennes permissions déjà accordées au rôle du bot.
+
+Pour les applications concernées par l'examen Discord, demander **Server Members** pour les listes de membres, les nouveaux arrivants et les mises à jour du tag public. La présence en ligne n'est pas nécessaire à cette fonctionnalité.
+
+## Commandes
+
+Les commandes de gestion ci-dessous nécessitent **Manage Roles**, avec une vérification lors de leur exécution. Les réponses sont localisées selon la langue du client Discord : anglais, français, espagnol, allemand, italien ou portugais du Brésil.
+
+| Commande | Fonction |
+| --- | --- |
+| `/config <tag> <roles>` | Configure le tag exact de ce serveur et les rôles à attribuer. Exemple : `/config tag:VIP roles:@Membre @VIP`. |
+| `/status` | Affiche la configuration, le nombre de membres ayant le tag et les éventuels problèmes de permissions ou de configuration. |
+| `/toggle` | Active ou désactive la surveillance. |
+| `/scan` | Réconcilie les rôles de tous les membres, avec un délai minimal de 60 secondes entre deux demandes. |
+| `/check <membre>` | Vérifie l'éligibilité d'un membre selon son tag et son serveur d'origine. |
+| `/stats` | Affiche les compteurs journaliers agrégés, avec des comparaisons à 7 et 30 jours. |
+| `/reset` | Arrête la surveillance et supprime la configuration et les statistiques du serveur, y compris dans les sauvegardes locales gérées. |
+
+`/help` donne la liste des commandes et les liens vers les politiques. `/botstats`, réservé au propriétaire du bot, affiche son état global : mémoire, latence, intégrité de la base, chiffrement et dernière sauvegarde.
+
+Pour démarrer, exécuter `/config`, vérifier `/status`, puis lancer `/scan`. Le champ `tag` reçoit le texte du tag de serveur, jamais une mention de rôle. Un tag de plus de quatre caractères ou une mention de rôle est refusé. Les rôles configurés doivent être sous celui du bot et sous le rôle le plus élevé de la personne qui configure, sauf si celle-ci possède le serveur.
+
+La désactivation et `/reset` attendent la fin d'une éventuelle modification de rôle déjà engagée, puis empêchent un scan annulé de modifier d'autres rôles ou de recréer des statistiques. **Les rôles déjà attribués restent en place.** Un `/reset` sans configuration permet aussi de supprimer d'éventuelles données résiduelles. Une erreur de suppression doit être corrigée puis la commande relancée.
+
+## Données et confidentialité
+
+La base SQLite `data/bot_data.db` contient la configuration de chaque serveur et des compteurs journaliers agrégés. Elle ne contient ni liste d'utilisateurs ni historique individuel des tags. La bibliothèque Discord reçoit et conserve en mémoire des informations sur les membres nécessaires aux événements et aux opérations de rôles.
+
+`/toggle` arrête le traitement pour le serveur ; il n'empêche pas Discord de livrer des événements ni la bibliothèque de conserver son cache. Il n'existe pas de commande de retrait individuel de ce traitement. Masquer son tag change l'éligibilité aux rôles, sans empêcher les mises à jour de membre. Retirer le bot met fin à son accès au serveur.
+
+La configuration est conservée jusqu'à `/reset` ou au départ du bot. Les statistiques couvrent au plus **365 dates journalières**, aujourd'hui inclus. La purge intervient au démarrage et lors de la maintenance horaire, également dans les sauvegardes locales gérées. Au démarrage, le bot supprime aussi les données des serveurs qu'il a quittés pendant son arrêt. Un marqueur chiffré conserve une demande de suppression inachevée pour permettre les nouvelles tentatives ; il disparaît après réussite.
+
+### Chiffrement obligatoire
+
+`ENCRYPTION_KEY` est obligatoire. Les identifiants de serveur, tags configurés, identifiants de rôles et compteurs sont chiffrés avec Fernet (AES-128-CBC et HMAC-SHA256). L'index de recherche par serveur est un HMAC avec clé, pas l'identifiant Discord en clair.
+
+La structure SQLite, les dates, les horodatages de configuration, l'état d'activation, le nombre de lignes et les index pseudonymes restent visibles. Ce chiffrement des champs ne rend donc pas le fichier entier opaque. La clé doit rester protégée séparément du volume de données.
+
+Les bases existantes et leurs sauvegardes locales gérées sont migrées au démarrage. Une clé absente, malformée ou incompatible, ou une migration incomplète, bloque le démarrage. **Remplacer la variable par une nouvelle clé ne constitue pas une rotation des données existantes.** Sans la clé d'origine, les données chiffrées sont irrécupérables.
+
+### Journaux
+
+Les logs applicatifs contiennent des événements opérationnels et des catégories d'erreur, sans identifiants Discord, noms, tags, rôles ni réponses brutes de l'API. Les logs bruts des dépendances et les détails d'exception sont exclus, même avec `LOG_LEVEL=DEBUG`. Utiliser `/status`, `/check` et `/botstats` pour les diagnostics autorisés dans Discord.
+
+Les anciens fichiers de log et les journaux conservés par l'hébergeur ne sont pas réécrits par une mise à jour. L'opérateur doit supprimer ou faire expirer les journaux historiques contenant des identifiants et définir la rétention des logs de son infrastructure.
+
+Consulter la [Privacy Policy](PRIVACY_POLICY.md) et les [Terms of Service](TERMS_OF_SERVICE.md). Le [suivi GitHub](https://github.com/QTBG/PickTag2GetRole/issues) permet les demandes et questions, mais il est public : ne pas y publier de secrets ou de données privées sur les membres.
+
+## Sauvegardes et restauration
+
+Des sauvegardes SQLite cohérentes sont créées au démarrage puis toutes les 24 heures dans `data/backups/bot_data-YYYYMMDD.db`, après vérification d'intégrité. La rétention limite leur nombre à `BACKUP_KEEP` (7 par défaut) et supprime les fichiers datés d'au moins sept jours avant la date UTC actuelle. Une date de modification plus ancienne peut avancer cette expiration. La maintenance horaire reste active quand `BACKUP_ENABLED=false`, y compris si un nouveau snapshot échoue. Un processus arrêté ne peut pas effectuer de purge ; elle reprend au démarrage.
+
+`/reset` et le départ du bot suppriment les données du serveur dans la base **et dans toutes les sauvegardes locales gérées**, sans supprimer les données des autres serveurs. Les copies manuelles, snapshots de l'hôte et sauvegardes externes sont à gérer séparément par l'opérateur, y compris lors d'une demande de suppression.
+
+Avant une restauration : arrêter le bot, choisir une sauvegarde respectant les suppressions et la rétention, et retrouver sa clé de chiffrement. Exemple pour le volume Docker nommé :
+
+```bash
+docker compose down
 VOL=$(docker volume ls -q | grep picktag_data | head -1)
 MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL")
+# Vérifier que MP désigne le volume attendu avant de continuer.
 sudo cp "$MP/backups/bot_data-AAAAMMJJ.db" "$MP/bot_data.db"
 sudo rm -f "$MP/bot_data.db-wal" "$MP/bot_data.db-shm"
 sudo chown -R 1000:1000 "$MP"
-docker compose up -d                                           # ou redéployer dans Dokploy
+docker compose up -d
 ```
 
-⚠️ Ces sauvegardes restent sur le même disque que la base. Pour survivre à une panne disque du VPS, copiez-les régulièrement ailleurs (cron + `scp`/`rclone`) — elles ne pèsent que quelques Ko :
-```bash
-0 5 * * * rsync -a "$(docker volume inspect -f '{{.Mountpoint}}' picktag_data)/backups/" user@autre-machine:~/picktag-backups/
-```
+Les sauvegardes locales ne protègent pas d'une panne du disque hôte. Pour des sauvegardes externes, appliquer aussi une rétention, un contrôle d'accès et la suppression des données demandée dans le bot.
 
-### Optimisations pour VPS léger
+## Variables d'environnement
 
-Le bot est optimisé pour :
-- Utiliser peu de RAM (limite Docker par défaut : 512MB, ajustable via `MEMORY_LIMIT`)
-- Utiliser peu de CPU (limite Docker : 0.5 CPU, ajustable via `CPU_LIMIT`)
-- Désactiver les intents Discord non nécessaires
-- Utiliser des événements plutôt que du polling constant
-- Traiter les membres par batch avec des pauses
+| Variable | Rôle |
+| --- | --- |
+| `DISCORD_TOKEN` | Token Discord obligatoire. |
+| `ENCRYPTION_KEY` | Clé Fernet obligatoire, à préserver entre déploiements. |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` ou `ERROR`, défaut `INFO`. |
+| `LOG_FILE` | Défaut `bot.log`, rotation à 5 Mo avec trois fichiers de rotation. Une valeur vide active stdout uniquement, comme dans Docker Compose. |
+| `CHUNK_ENABLED_GUILDS` | Défaut `true` : charge les membres des serveurs surveillés en cache. `false` économise de la RAM, les membres non mis en cache dépendent davantage des scans. |
+| `BACKUP_ENABLED` | Défaut `true` : création quotidienne de snapshots. La rétention et les suppressions restent actives avec `false`. |
+| `BACKUP_KEEP` | Nombre maximal de fichiers de sauvegarde, défaut `7`, en complément de la limite d'âge. |
+| `MEMORY_LIMIT` / `CPU_LIMIT` | Limites Docker Compose, défauts `512M` et `0.5`. |
+| `HEARTBEAT_FILE` | Fichier du contrôle de santé, défaut `/tmp/picktag_heartbeat`. |
 
-## 🔒 Sécurité et Confidentialité
+## Déploiement avec Dokploy
 
-Le bot est conçu avec la sécurité et la confidentialité en priorité :
+1. Créer un service **Compose**, provider **GitHub/Git**, dépôt `QTBG/PickTag2GetRole`, branche `main`, Compose Path `./docker-compose.yml`, type **Docker Compose**.
+2. Dans **Environment**, définir `DISCORD_TOKEN` et `ENCRYPTION_KEY`. Conserver la clé existante pour une instance déjà chiffrée.
+3. Déployer avec **Deploy**. Le volume nommé `picktag_data` persiste entre les déploiements.
+4. Vérifier les logs opérationnels puis `/botstats` dans Discord pour l'état de la base, du chiffrement et de la sauvegarde.
 
-### Protection des données
-- **Base de données SQLite** : Chaque serveur a ses données isolées
-- **Pas de partage entre serveurs** : Les configurations d'un serveur ne sont jamais accessibles par d'autres
-- **Suppression automatique** : Les données sont supprimées quand le bot quitte un serveur
-- **Données minimales** : Seuls les IDs nécessaires sont stockés (pas de messages, pas de données personnelles)
+Éviter un bind mount relatif `./data:/app/data` avec Dokploy : le répertoire de code peut être recréé au déploiement. Le conteneur utilise l'UID 1000. Pour un ancien dossier hôte créé par un conteneur root, adapter une fois ses permissions avec `sudo chown -R 1000:1000 ./data` après vérification du chemin.
 
-### Architecture sécurisée
-- **Pas de fichier partagé** : Contrairement à un fichier JSON unique, la base de données isole les données
-- **Permissions Discord** : Le bot demande uniquement les permissions nécessaires
-- **Logs minimaux** : Aucune donnée sensible n'est loggée
-
-## 🐳 Docker
-
-### Build manuel
-```bash
-docker build -t picktag2getrole .
-```
-
-### Lancer sans docker-compose
-```bash
-docker run -d \
-  --name picktag2getrole \
-  --restart unless-stopped \
-  -e DISCORD_TOKEN=votre_token \
-  -v $(pwd)/data:/app/data \
-  picktag2getrole
-```
-
-### Voir les logs
-```bash
-docker logs picktag2getrole
-```
-
-### Healthcheck
-
-Le conteneur embarque un `HEALTHCHECK` : le bot touche `HEARTBEAT_FILE` toutes les minutes tant que la gateway Discord répond. Si le process se fige ou perd la connexion, le fichier cesse d'être mis à jour et le conteneur passe en `unhealthy` (fenêtre de 5 min, `start-period` de 30 s pour laisser le temps à la connexion initiale).
+Le contrôle de santé surveille un fichier mis à jour chaque minute tant que la connexion Discord répond. Après cinq minutes sans mise à jour, le conteneur devient `unhealthy`.
 
 ```bash
-docker inspect --format '{{.State.Health.Status}}' picktag2getrole
+docker compose logs --tail=100
 ```
 
-### ⚠️ Migration depuis une ancienne version (conteneur root)
+## Mise à jour depuis une ancienne version
 
-Le conteneur tourne désormais avec un utilisateur non-root (UID 1000) pour plus de sécurité. Si vous montez un dossier de l'hôte créé par une ancienne version (root), corrigez ses permissions une seule fois :
+- Conserver la clé Fernet utilisée en production. Une installation auparavant en clair doit définir une clé avant de démarrer cette version.
+- Le schéma de la base et des sauvegardes locales est migré au démarrage. Un retour à l'ancien code seul n'est pas compatible : prévoir une procédure de restauration et conserver la clé, en respectant les demandes de suppression et la rétention des éventuelles copies externes.
+- Vérifier que les tags configurés désignent bien le serveur où la commande a été exécutée. Les anciennes correspondances avec un autre serveur ou avec `#` ne sont plus valables ; une réconciliation peut retirer les rôles devenus inéligibles.
+- Déployer et vérifier l'attribution et le retrait sur un compte de test. Ensuite, désactiver **Presence Intent** dans le Developer Portal et ne demander que **Server Members** dans le formulaire d'examen.
+- Examiner les anciennes permissions d'invitation, les logs historiques et les snapshots externes. La mise à jour ne les révoque ou n'efface pas automatiquement.
+
+## Dépannage
+
+- **Aucun changement de rôle** : vérifier Server Members, la visibilité du tag, son serveur d'origine, la configuration dans `/status` et lancer `/scan`.
+- **Permissions insuffisantes** : vérifier **Manage Roles**, la position du rôle du bot et celle des rôles configurés. `/status` donne le nombre de membres qui n'ont pas pu être mis à jour.
+- **Configuration invalide** : relancer `/config` avec le tag exact et les mentions de rôles dans le champ `roles`. Le bot suspend les opérations pour une configuration invalide.
+- **Démarrage bloqué par la clé** : restaurer la clé d'origine. Ne pas générer une nouvelle clé pour remplacer une clé perdue d'une base déjà chiffrée.
+- **Suppression ou migration impossible** : vérifier les permissions du volume et les sauvegardes concernées. Ne pas considérer une commande échouée comme une suppression réussie.
+- **Mémoire élevée** : augmenter `MEMORY_LIMIT` ou désactiver le chargement complet avec `CHUNK_ENABLED_GUILDS=false`, au prix d'un recours plus fréquent aux scans.
+
+## Vérification du code
+
+Après `uv sync --locked`, lancer les tests avec :
+
 ```bash
-sudo chown -R 1000:1000 ./data
-```
-Avec le volume nommé `picktag_data` (configuration par défaut), rien à faire : le volume hérite automatiquement du bon propriétaire à sa création.
-
-## 🚀 Déploiement avec Dokploy
-
-Le `docker-compose.yml` du dépôt fonctionne tel quel avec Dokploy.
-
-1. **Créer l'application** : *Create Service* → **Compose** → Provider **GitHub/Git**, dépôt `QTBG/PickTag2GetRole`, branche `main`, Compose Path `./docker-compose.yml`, Compose Type **Docker Compose**
-2. **Environnement** : onglet *Environment*, coller au minimum :
-   ```
-   DISCORD_TOKEN=votre_token
-   ```
-   (toutes les autres variables ont des valeurs par défaut — voir `.env.example`)
-3. **Déployer** : bouton *Deploy*. Le volume nommé `picktag_data` est créé automatiquement et **persiste entre les déploiements**
-4. **Vérifier** : les logs doivent afficher `Bot connected as ...`, et `/botstats` sur Discord donne l'état complet (RAM, intégrité de la base, dernière sauvegarde)
-
-**Migrer une base existante vers Dokploy** : voir la procédure de transfert dans la section *Sauvegardes automatiques* ci-dessus (même principe : copier le fichier `.db` dans le mountpoint du volume, puis `chown -R 1000:1000`).
-
-⚠️ **Ne pas utiliser de bind mount relatif** (`./data:/app/data`) avec Dokploy : le dossier du code est recréé à chaque déploiement, la base serait perdue. Le volume nommé du dépôt évite ce piège.
-
-## 🔑 Obtenir le token du bot
-
-1. **Créer une application Discord**
-   - Aller sur https://discord.com/developers/applications
-   - Cliquer sur "New Application" et donner un nom
-
-2. **Créer le bot**
-   - Dans le menu de gauche, cliquer sur "Bot"
-   - Cliquer sur "Add Bot"
-
-3. **Récupérer le token**
-   - Cliquer sur "Reset Token" 
-   - Copier le token qui apparaît (⚠️ ne sera montré qu'une fois!)
-   - C'est ce token qu'il faut mettre dans le fichier `.env`
-
-4. **Activer les intents** (⚠️ TRÈS IMPORTANT)
-   - Sur la même page, activer ces deux intents :
-     - **SERVER MEMBERS INTENT** : Pour accéder aux membres
-     - **PRESENCE INTENT** : Pour accéder aux tags de serveur (primary guild)
-   - Sauvegarder les changements
-
-## 🤝 Permissions Discord requises
-
-Le bot a besoin UNIQUEMENT de ces permissions :
-- **Manage Roles** (268435456) : Pour ajouter/retirer des rôles
-- **View Channels** (1024) : Pour accéder aux serveurs
-
-Pour inviter le bot :
-1. Dans le Developer Portal, aller dans "OAuth2" > "URL Generator"
-2. Cocher `bot` et `applications.commands`
-3. Sélectionner UNIQUEMENT : Manage Roles + View Channels
-4. Utiliser l'URL générée pour inviter le bot
-
-Lien d'invitation avec permissions minimales :
-```
-https://discord.com/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=268436480&scope=bot%20applications.commands
+uv run python -m unittest discover -s tests -v
 ```
 
-⚠️ Le bot n'a PAS besoin de :
-- Read Message History
-- Send Messages
-- Read Messages
-- Ou toute autre permission
+La CI vérifie Python 3.14, l'installation à partir de `uv.lock`, la construction Docker et les tests dans l'image de production. Les tests utilisent des données fictives ; une vérification Discord sur un compte de test reste nécessaire avant la mise en production.
 
-## 📝 Notes importantes
+## Licence
 
-1. **Tags de serveur** : Le bot lit le tag "Primary Guild" (tag de serveur) affiché sur le profil, à côté du pseudo. L'utilisateur doit l'avoir activé publiquement
-2. **Performance** : Le bot réagit instantanément aux changements via les événements Discord, avec une vérification quotidienne de sécurité
-3. **Détection temps réel** : Par défaut (`CHUNK_ENABLED_GUILDS=true`), le bot met en cache les membres des serveurs surveillés pour une détection instantanée complète, même sur les gros serveurs. Avec `false`, les serveurs >250 membres sont surtout couverts par le scan quotidien et `/scan`
-4. **Langues** : Les commandes et réponses sont localisées en anglais, français, espagnol, allemand, italien et portugais (Brésil), selon la langue du client Discord de chaque utilisateur
-5. **Limites** : Sur un VPS très léger, évitez de surveiller trop de serveurs très grands simultanément
-
-## 🐛 Dépannage
-
-### Le bot ne détecte pas les tags
-- **Vérifier les intents Discord** : PRESENCE INTENT et SERVER MEMBERS INTENT doivent être activés dans le Developer Portal
-- Vérifier que le tag est exactement comme configuré
-- S'assurer que le bot a les permissions nécessaires
-- Vérifier que les utilisateurs ont leur "Primary Guild" (tag de serveur) affiché publiquement
-- Pour des logs détaillés, définir `LOG_LEVEL=DEBUG` dans le fichier .env puis consulter bot.log (ou `docker logs`)
-- Lancer `/scan` pour forcer une resynchronisation immédiate
-
-### « monitoring paused for this guild » dans les logs
-
-```
-Guild 123...: configured tag is a role mention — it can never match a server tag;
-monitoring paused for this guild to avoid mass role removal
-```
-
-(ou `configured tag is 26 characters (server tags are at most 4)` selon le cas — la valeur elle-même n'apparaît jamais dans les logs.)
-
-Une valeur impossible à satisfaire a été enregistrée dans le champ `tag` : une mention de rôle collée, ou un tag de plus de 4 caractères (la limite des tags de serveur Discord). Une telle valeur ne peut correspondre à aucun membre : sans garde-fou, le bot en conclurait que plus personne ne porte le tag et retirerait les rôles à tout le serveur. Il met donc la surveillance en pause et **ne touche à aucun rôle** jusqu'à correction.
-
-**Correctif** : relancer `/config` avec le tag de serveur court (ex. `tag:VIP`) et laisser les rôles dans le champ `roles`. `/status` affiche l'alerte tant que la configuration est cassée.
-
-### Erreurs de permissions
-
-```
-Guild 123...: missing permissions to manage roles — my role is probably
-below the configured roles, or I lack Manage Roles
-```
-
-- Le bot doit avoir un rôle plus élevé que les rôles qu'il essaie d'attribuer (Paramètres du serveur → Rôles, glisser le rôle du bot au-dessus)
-- Vérifier que le bot a la permission "Manage Roles"
-- `/status` indique combien de membres distincts n'ont pas pu être mis à jour depuis le dernier scan (scan et événements temps réel compris)
-- Le message n'apparaît qu'une fois par serveur et par scan, pas une ligne par membre
-
-### Utilisation CPU/RAM élevée
-- Augmenter l'intervalle de vérification dans `tag_monitor.py`
-- Réduire le nombre de serveurs surveillés
-- Vérifier les logs pour des erreurs en boucle
-
-## 📄 Licence
-
-Ce projet est sous licence MIT.
-
-## 📜 Informations Légales
-
-- [Terms of Service](TERMS_OF_SERVICE.md)
-- [Privacy Policy](PRIVACY_POLICY.md)
-
-Ces deux documents sont aussi accessibles directement depuis Discord via `/help`, sans quitter le serveur.
+Code sous licence MIT. La publication du code ne constitue pas une certification de conformité ou une approbation par Discord.
 
 ---
 
 # PickTag2GetRole (English)
 
-An ultra-optimized Discord bot for monitoring server tags and automatically assigning roles to users. Designed to run on very lightweight VPS with a single CPU core.
+A Discord bot that assigns and removes roles when members display their server's public tag. **Server Members is the only privileged intent**, without Presence or Message Content.
 
-## 🚀 Features
+## Behavior
 
-- **Automatic tag monitoring**: Detects when a user adds or removes a server tag
-- **Automatic role assignment**: Adds/removes roles based on tag presence
-- **Intuitive slash commands**: Easy configuration via Discord
-- **Resource optimized**: Designed to run on VPS with 1 CPU and low RAM
-- **Real-time events**: Uses Discord events for maximum responsiveness
-- **Safety verification**: Verification at startup and once daily to ensure consistency
-- **Misconfiguration safeguards**: A configuration that can never match any member is rejected at input and neutralized at runtime — no mass role removal, ever
+A member qualifies when their server identity is publicly enabled, the source server is the server being monitored, and the tag text matches the configuration, ignoring case. An identical tag from a different server does not qualify. Partial `#` matching is not supported.
 
-## 📋 Prerequisites
+Member-update events handle tag changes. Startup, daily and manual `/scan` reconciliation catches missed changes. The bot does not read messages, games or members' online status.
 
-- Python 3.11+ or Docker
-- A Discord bot with its token (see "Getting the bot token" section)
-- Bot permissions:
-  - Manage Roles
-  - View Server Members
-  - Read Server Information
+## Installation
 
-## 🛠️ Installation
+Requirements: Docker, or [uv](https://docs.astral.sh/uv/) for a direct installation with Python 3.14. The bot needs **Manage Roles**, with its role above every role it must assign.
 
-### Option 1: With Docker (Recommended)
-
-1. **Clone the project**
-   ```bash
-   git clone https://github.com/QTBG/PickTag2GetRole.git
-   cd PickTag2GetRole
-   ```
-
-2. **Configure the bot**
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and add your Discord token:
-   ```
-   DISCORD_TOKEN=your_token_here
-   ```
-
-3. **Launch with Docker Compose**
-   ```bash
-   docker-compose up -d
-   ```
-
-### Option 2: Without Docker
-
-1. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure the bot**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your token
-   ```
-
-3. **Run the bot**
-   ```bash
-   python bot.py
-   ```
-
-## 🎮 Usage
-
-### Available Commands
-
-- **`/config <tag> <@role1 @role2...>`**: Configure the tag to monitor and roles to assign
-  - Example: `/config tag:VIP roles:@Member @VIP`
-  - ⚠️ The `tag` field expects the **server tag**: the 2-4 characters shown next to member names. It is **not** a role mention — pasting an `@Role` here is the most common mistake, and it is rejected
-  - A tag longer than 4 characters is rejected: Discord server tags are 4 characters at most, so it could never match anyone
-  - A tag containing `#` enables partial matching (an intentional use)
-  - Security: you cannot configure a role higher than or equal to your own highest role (or the bot's)
-  
-- **`/status`**: Display current bot configuration and how many members have the tag. Also surfaces the two silent failure modes: invalid tag (monitoring paused) and missing permissions (how many members could not be updated)
-  
-- **`/toggle`**: Enable or disable tag monitoring
-  
-- **`/scan`**: Force an immediate scan of all members (useful after initial configuration, 60s cooldown)
-
-- **`/check <@member>`**: Check a specific member's tag status
-
-- **`/stats`**: Evolution of members with the tag (7 days, 30 days, mini-chart). Aggregated counters only, no user IDs stored
-
-- **`/reset`**: Delete the configuration and all stored data for this server
-
-- **`/botstats`**: Global bot statistics (bot owner only): servers, members, uptime, RAM, latency, database size
-
-- **`/help`**: Lists all available commands, with clickable links to the privacy policy and terms of service
-
-### Initial Setup
-
-1. Invite the bot to your server with necessary permissions
-2. **Move the bot's role above the roles it must assign** (Server Settings → Roles): without this it cannot update anyone
-3. Use `/config` to define:
-   - The tag to monitor: the short server tag (2-4 characters), exactly as it appears next to member names — **not** a role mention
-   - The roles to assign (mention with @)
-4. Check with `/status` that no warning is reported
-5. Use `/scan` to apply roles to members who already have the tag
-6. The bot will then automatically monitor changes
-
-## 🔧 Advanced Configuration
-
-### Environment Variables
-
-- `DISCORD_TOKEN`: Discord bot token (required)
-- `LOG_LEVEL`: Logging level (optional, default: INFO). Possible values: DEBUG, INFO, WARNING, ERROR
-- `LOG_FILE`: Log file path (optional, default: `bot.log`, automatic rotation 5 MB × 3). Set to an empty value to log to stdout only (recommended with Docker)
-- `CHUNK_ENABLED_GUILDS`: `true` (default) caches the full member list of servers where monitoring is **enabled**, for complete real-time detection even on large servers (>250 members). Cost: ~1 KB of RAM per cached member — with many very large servers, raise the Docker memory limit (e.g. 384M/512M) or set `false` (large servers will then rely on the daily scan and `/scan`)
-- `BACKUP_ENABLED`: `true` (default) enables the daily database backup into `data/backups/`
-- `ENCRYPTION_KEY`: Fernet key enabling **encryption at rest** for stored values (recommended, see dedicated section). Empty means clear-text storage
-- `BACKUP_KEEP`: Number of daily backup files to keep (default: 7)
-- `MEMORY_LIMIT` / `CPU_LIMIT`: Container limits, used by `docker-compose.yml` only (defaults: `512M` and `0.5`)
-- `HEARTBEAT_FILE`: File touched every minute and read by the container HEALTHCHECK (default: `/tmp/picktag_heartbeat`, rarely changed)
-
-### Database
-
-The bot uses an SQLite database (`data/bot_data.db`) to securely store configurations. The database file is stored in a `data/` folder that is created automatically. Each server has its own isolated data:
-- Tags monitored per server
-- Roles to assign
-- Bot activation status
-
-**Security & Privacy**:
-- Each server only has access to its own data
-- Data is automatically deleted when the bot is removed from a server
-
-### Encryption at Rest
-
-When `ENCRYPTION_KEY` is set, every stored **value** is encrypted with Fernet (AES-128-CBC + HMAC-SHA256): the monitored tag, role IDs and daily counters. Identifiers used as keys (guild ID, date) stay in clear text so they remain indexable.
-
-A copy of the database file, or of a backup, is therefore unusable without the key.
-
-**Generate a key**:
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+git clone https://github.com/QTBG/PickTag2GetRole.git
+cd PickTag2GetRole
+cp .env.example .env
 ```
-Then set it as `ENCRYPTION_KEY` (environment variable, never inside the data volume).
 
-**Migration**: on the first start with a key, existing clear-text data is encrypted automatically. The operation is idempotent and loses no configuration.
+### With Docker
 
-⚠️ **Keep the key off the server.** Without it, an already encrypted database (and its backups) cannot be recovered. The bot refuses to start when the key is missing, wrong or malformed, rather than running with unreadable data and overwriting valid configurations.
+Build the image and generate an encryption key for a **new installation**:
 
-Without `ENCRYPTION_KEY` the bot runs in clear text, so existing self-hosted installs keep working. `/botstats` reports the encryption status.
-
-### Automatic Backups
-
-The bot automatically backs up its SQLite database to protect against corruption:
-
-- **When**: at startup, then every 24h
-- **Where**: `data/backups/bot_data-YYYYMMDD.db` (one file per day, the `BACKUP_KEEP` most recent kept, 7 by default)
-- **How**: SQLite's online backup API — a consistent snapshot even during writes (a plain `cp` of a live WAL database is not), atomic write
-- **Integrity check**: `PRAGMA quick_check` before every backup. On failure, the bot neither overwrites **nor rotates out** existing healthy backups, and logs a loud error (also visible in `/botstats`)
-
-**Restore** (the `picktag_data` Docker volume holds `bot_data.db` and `backups/`):
 ```bash
-docker compose down                                            # or stop the app in Dokploy
+docker build -t picktag2getrole .
+docker run --rm --entrypoint python picktag2getrole -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Set both required variables in `.env`:
+
+```dotenv
+DISCORD_TOKEN=your_token
+ENCRYPTION_KEY=your_fernet_key
+```
+
+Keep the key in a secret store with a protected recovery copy. When updating an encrypted installation, **preserve its existing key**.
+
+```bash
+docker compose up -d
+```
+
+### Without Docker
+
+```bash
+uv sync --locked
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Set `DISCORD_TOKEN` and `ENCRYPTION_KEY` in `.env`, then run:
+
+```bash
+uv run python bot.py
+```
+
+## Discord Setup
+
+1. Create the application in the [Developer Portal](https://discord.com/developers/applications) and obtain its token under **Bot**.
+2. Under **Privileged Gateway Intents**, enable **SERVER MEMBERS INTENT** only. **PRESENCE INTENT** and **MESSAGE CONTENT INTENT** are not used.
+3. Under **OAuth2 > URL Generator**, select the `bot` and `applications.commands` scopes and the **Manage Roles** permission only.
+4. Invite the bot and move its role above those it must manage.
+
+Example invitation:
+
+```text
+https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268435456&scope=bot%20applications.commands
+```
+
+**Guilds** is also enabled in code; it is not privileged. **View Channels**, **Administrator**, and message-reading or message-sending permissions are not needed. Updating the application does not automatically revoke permissions already granted to an existing bot role.
+
+For applications subject to Discord's review, request **Server Members** for member lists, new arrivals and updates to the public primary guild. Online presence is not required for this functionality.
+
+## Commands
+
+These management commands require **Manage Roles**, checked when each command runs. Responses follow the user's Discord language: English, French, Spanish, German, Italian or Brazilian Portuguese.
+
+| Command | Purpose |
+| --- | --- |
+| `/config <tag> <roles>` | Configure this server's exact tag and assigned roles. Example: `/config tag:VIP roles:@Member @VIP`. |
+| `/status` | Show configuration, tagged-member count and permission or configuration problems. |
+| `/toggle` | Enable or disable monitoring. |
+| `/scan` | Reconcile all members' roles, with a 60-second request cooldown. |
+| `/check <member>` | Check eligibility using the member's tag and source server. |
+| `/stats` | Show daily aggregate counts and comparisons over 7 and 30 days. |
+| `/reset` | Stop monitoring and delete this server's configuration and statistics, including from managed local backups. |
+
+`/help` lists commands and links to the policies. `/botstats`, restricted to the bot owner, shows memory, latency, database integrity, encryption and last backup status.
+
+Start with `/config`, check `/status`, then run `/scan`. The `tag` field takes the server tag text, never a role mention. Tags longer than four characters and role mentions are rejected. Configured roles must be below the bot's highest role and the caller's highest role, except for the server owner.
+
+Disabling monitoring and `/reset` wait for any role operation already in progress, then prevent a cancelled scan from changing further roles or recreating statistics. **Already assigned roles remain in Discord.** `/reset` also removes residual data when no configuration exists. Resolve deletion errors and retry the command if it fails.
+
+## Data and Privacy
+
+The SQLite database at `data/bot_data.db` contains per-server configuration and daily aggregate counters. It contains no member list or individual tag history. The Discord library receives and caches member information in memory for member events and role operations.
+
+`/toggle` stops processing for the server; it does not prevent Discord from delivering updates or the library from caching members. There is no per-member opt-out command. Hiding a tag changes eligibility without stopping member updates. Removing the bot ends its access to the server.
+
+Configuration is retained until `/reset` or departure cleanup. Statistics cover at most **365 daily dates**, including today. Startup and hourly maintenance purge expired records, including from managed local backups. Startup also removes data for servers the bot left while offline. An encrypted marker records unfinished deletion requests for retry and is removed after successful cleanup.
+
+### Required Encryption
+
+`ENCRYPTION_KEY` is required. Server IDs, configured tags, role IDs and counts are encrypted with Fernet (AES-128-CBC and HMAC-SHA256). Server lookup indexes are keyed HMACs instead of plaintext Discord IDs.
+
+SQLite structure, dates, configuration timestamps, enabled state, row counts and pseudonymous lookup indexes remain visible. Field encryption does not make the entire file opaque. Protect the key separately from the data volume.
+
+Existing databases and managed local backups are migrated at startup. A missing, malformed or incompatible key, or an incomplete migration, prevents startup. **Replacing the variable with a new key does not rotate existing encrypted data.** Without the original key, encrypted data cannot be recovered.
+
+### Logs
+
+Application logs contain operational events and error categories without Discord IDs, names, tags, roles or raw API responses. Raw dependency logs and exception details are excluded even with `LOG_LEVEL=DEBUG`. Use `/status`, `/check` and `/botstats` for authorized diagnostics in Discord.
+
+Updating the bot does not rewrite historical log files or hosting logs. The operator must delete or expire historical logs containing identifiers and define retention for infrastructure logs.
+
+See the [Privacy Policy](PRIVACY_POLICY.md) and [Terms of Service](TERMS_OF_SERVICE.md). Requests and questions can be submitted through [GitHub issues](https://github.com/QTBG/PickTag2GetRole/issues), a public channel: do not post secrets or private member data.
+
+## Backups and Recovery
+
+Consistent SQLite backups are created at startup and every 24 hours in `data/backups/bot_data-YYYYMMDD.db`, after an integrity check. Retention limits the count to `BACKUP_KEEP` (default: 7) and removes files dated seven or more days before the current UTC date. An older modification timestamp can cause earlier expiry. Hourly maintenance continues with `BACKUP_ENABLED=false`, including when a new snapshot fails. A stopped process cannot purge data; maintenance resumes at startup.
+
+`/reset` and departure cleanup delete the server's data from the live database **and every managed local backup**, preserving other servers' data. Manual copies, host snapshots and external backups must be managed separately by the operator, including for deletion requests.
+
+Before restoring, stop the bot, choose a backup that respects deletions and retention, and locate its encryption key. Example for the named Docker volume:
+
+```bash
+docker compose down
 VOL=$(docker volume ls -q | grep picktag_data | head -1)
 MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL")
+# Confirm that MP points to the intended volume before proceeding.
 sudo cp "$MP/backups/bot_data-YYYYMMDD.db" "$MP/bot_data.db"
 sudo rm -f "$MP/bot_data.db-wal" "$MP/bot_data.db-shm"
 sudo chown -R 1000:1000 "$MP"
-docker compose up -d                                           # or redeploy in Dokploy
+docker compose up -d
 ```
 
-⚠️ These backups live on the same disk as the database. To survive a VPS disk failure, copy them elsewhere regularly (cron + `scp`/`rclone`) — they only weigh a few KB:
-```bash
-0 5 * * * rsync -a "$(docker volume inspect -f '{{.Mountpoint}}' picktag_data)/backups/" user@other-machine:~/picktag-backups/
-```
+Local snapshots do not protect against host disk failure. External backups also need access controls, retention and enforcement of deletion requests made through the bot.
 
-### Optimizations for Lightweight VPS
+## Environment Variables
 
-The bot is optimized to:
-- Use little RAM (default Docker limit: 512MB, tunable via `MEMORY_LIMIT`)
-- Use low CPU (Docker limit: 0.5 CPU, tunable via `CPU_LIMIT`)
-- Disable unnecessary Discord intents
-- Use events rather than constant polling
-- Process members in batches with pauses
+| Variable | Purpose |
+| --- | --- |
+| `DISCORD_TOKEN` | Required Discord token. |
+| `ENCRYPTION_KEY` | Required Fernet key, preserved across deployments. |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR`, default `INFO`. |
+| `LOG_FILE` | Default `bot.log`, rotation at 5 MB with three rotated files. An empty value enables stdout only, as in Docker Compose. |
+| `CHUNK_ENABLED_GUILDS` | Default `true`: cache members of monitored servers. `false` saves memory; uncached members rely more on scans. |
+| `BACKUP_ENABLED` | Default `true`: create daily snapshots. Retention and deletion remain active with `false`. |
+| `BACKUP_KEEP` | Maximum backup files, default `7`, in addition to the age limit. |
+| `MEMORY_LIMIT` / `CPU_LIMIT` | Docker Compose limits, default `512M` and `0.5`. |
+| `HEARTBEAT_FILE` | Healthcheck file, default `/tmp/picktag_heartbeat`. |
 
-## 🔒 Security and Privacy
+## Deploying with Dokploy
 
-The bot is designed with security and privacy as priorities:
+1. Create a **Compose** service using **GitHub/Git**, repository `QTBG/PickTag2GetRole`, branch `main`, Compose Path `./docker-compose.yml`, type **Docker Compose**.
+2. Set `DISCORD_TOKEN` and `ENCRYPTION_KEY` under **Environment**. Preserve the existing key for an encrypted instance.
+3. Select **Deploy**. The named `picktag_data` volume persists across deployments.
+4. Check operational logs and `/botstats` in Discord for database, encryption and backup status.
 
-### Data Protection
-- **SQLite database**: Each server has isolated data
-- **No cross-server sharing**: One server's configurations are never accessible by others
-- **Automatic deletion**: Data is deleted when the bot leaves a server
-- **Minimal data**: Only necessary IDs are stored (no messages, no personal data)
+Avoid relative bind mounts such as `./data:/app/data` in Dokploy: deployment can recreate the source directory. The container runs as UID 1000. For an old host folder created by a root container, adjust its permissions once with `sudo chown -R 1000:1000 ./data` after checking the path.
 
-### Secure Architecture
-- **No shared file**: Unlike a single JSON file, the database isolates data
-- **Discord permissions**: The bot only requests necessary permissions
-- **Minimal logs**: No sensitive data is logged
-
-## 🐳 Docker
-
-### Manual Build
-```bash
-docker build -t picktag2getrole .
-```
-
-### Run without docker-compose
-```bash
-docker run -d \
-  --name picktag2getrole \
-  --restart unless-stopped \
-  -e DISCORD_TOKEN=your_token \
-  -v $(pwd)/data:/app/data \
-  picktag2getrole
-```
-
-### View logs
-```bash
-docker logs picktag2getrole
-```
-
-### Healthcheck
-
-The container ships a `HEALTHCHECK`: the bot touches `HEARTBEAT_FILE` every minute for as long as the Discord gateway responds. If the process freezes or loses its connection, the file stops being updated and the container turns `unhealthy` (5 min window, 30 s `start-period` to allow for the initial connection).
+The healthcheck watches a file updated every minute while the Discord connection responds. Five minutes without an update makes the container `unhealthy`.
 
 ```bash
-docker inspect --format '{{.State.Health.Status}}' picktag2getrole
+docker compose logs --tail=100
 ```
 
-### ⚠️ Migrating from an older version (root container)
+## Upgrading from an Older Release
 
-The container now runs as a non-root user (UID 1000) for better security. If you mount a host folder created by an older (root) version, fix its permissions once:
+- Preserve the Fernet key used in production. Previously plaintext installations must set a key before starting this release.
+- The database and managed local backups are migrated at startup. Downgrading only the code is not compatible: plan a recovery procedure and preserve the key, while respecting deletion requests and retention for any external recovery copies.
+- Verify that configured tags identify the server where the command was run. Previous matches from another source server or partial `#` configurations no longer qualify; reconciliation may remove roles from ineligible members.
+- Deploy and verify role addition and removal with a test account. Then disable **Presence Intent** in the Developer Portal and request **Server Members** only in the review form.
+- Review historical invitation permissions, logs and external snapshots. Updating the code does not automatically revoke or erase them.
+
+## Troubleshooting
+
+- **Roles do not change**: check Server Members, public tag visibility, source server and `/status`, then run `/scan`.
+- **Permission errors**: check **Manage Roles**, the bot's highest role and configured roles. `/status` reports members that could not be updated.
+- **Invalid configuration**: run `/config` with the exact tag and role mentions in `roles`. Invalid configurations pause monitoring.
+- **Key prevents startup**: restore the original key. Generating a replacement cannot recover an already encrypted database.
+- **Deletion or migration fails**: check volume permissions and affected backups. A failed command is not a successful deletion.
+- **High memory use**: raise `MEMORY_LIMIT` or set `CHUNK_ENABLED_GUILDS=false`, accepting greater reliance on scans.
+
+## Code Verification
+
+After `uv sync --locked`, run:
+
 ```bash
-sudo chown -R 1000:1000 ./data
-```
-With the named volume `picktag_data` (default setup), nothing to do: the volume automatically inherits the correct owner when created.
-
-## 🚀 Deploying with Dokploy
-
-The repository's `docker-compose.yml` works as-is with Dokploy.
-
-1. **Create the application**: *Create Service* → **Compose** → Provider **GitHub/Git**, repository `QTBG/PickTag2GetRole`, branch `main`, Compose Path `./docker-compose.yml`, Compose Type **Docker Compose**
-2. **Environment**: in the *Environment* tab, paste at minimum:
-   ```
-   DISCORD_TOKEN=your_token
-   ```
-   (every other variable has a default — see `.env.example`)
-3. **Deploy**: hit *Deploy*. The named volume `picktag_data` is created automatically and **persists across deployments**
-4. **Verify**: logs should show `Bot connected as ...`, and `/botstats` on Discord reports full status (RAM, database integrity, last backup)
-
-**Migrating an existing database to Dokploy**: see the transfer procedure in the *Automatic Backups* section above (same idea: copy the `.db` file into the volume mountpoint, then `chown -R 1000:1000`).
-
-⚠️ **Do not use a relative bind mount** (`./data:/app/data`) with Dokploy: the code directory is recreated on every deployment, so the database would be lost. The repository's named volume avoids this pitfall.
-
-## 🔑 Getting the Bot Token
-
-1. **Create a Discord application**
-   - Go to https://discord.com/developers/applications
-   - Click "New Application" and give it a name
-
-2. **Create the bot**
-   - In the left menu, click "Bot"
-   - Click "Add Bot"
-
-3. **Get the token**
-   - Click "Reset Token"
-   - Copy the token that appears (⚠️ will only be shown once!)
-   - This is the token to put in the `.env` file
-
-4. **Enable intents** (⚠️ VERY IMPORTANT)
-   - On the same page, enable these two intents:
-     - **SERVER MEMBERS INTENT**: To access members
-     - **PRESENCE INTENT**: To access server tags (primary guild)
-   - Save changes
-
-## 🤝 Required Discord Permissions
-
-The bot ONLY needs these permissions:
-- **Manage Roles** (268435456): To add/remove roles
-- **View Channels** (1024): To access servers
-
-To invite the bot:
-1. In the Developer Portal, go to "OAuth2" > "URL Generator"
-2. Check `bot` and `applications.commands`
-3. Select ONLY: Manage Roles + View Channels
-4. Use the generated URL to invite the bot
-
-Invitation link with minimal permissions:
-```
-https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268436480&scope=bot%20applications.commands
+uv run python -m unittest discover -s tests -v
 ```
 
-⚠️ The bot does NOT need:
-- Read Message History
-- Send Messages
-- Read Messages
-- Or any other permission
+CI covers Python 3.14, installation from `uv.lock`, the Docker build and tests inside the production image. Tests use synthetic data; test role changes with a Discord test account before production deployment.
 
-## 📝 Important Notes
+## License
 
-1. **Server tags**: The bot reads the "Primary Guild" tag (server tag) displayed on the profile, next to the username. Users must have it publicly enabled
-2. **Performance**: The bot responds instantly to changes via Discord events, with a daily safety verification
-3. **Real-time detection**: By default (`CHUNK_ENABLED_GUILDS=true`), the bot caches members of monitored servers for complete instant detection, even on large servers. With `false`, servers >250 members are mostly covered by the daily scan and `/scan`
-4. **Languages**: Commands and responses are localized in English, French, Spanish, German, Italian and Brazilian Portuguese, based on each user's Discord client language
-5. **Limits**: On a very light VPS, avoid monitoring too many very large servers simultaneously
-
-## 🐛 Troubleshooting
-
-### Bot doesn't detect tags
-- **Check Discord intents**: PRESENCE INTENT and SERVER MEMBERS INTENT must be enabled in the Developer Portal
-- Verify that the tag is exactly as configured
-- Ensure the bot has necessary permissions
-- Verify that users have their "Primary Guild" (server tag) publicly displayed
-- For detailed logs, set `LOG_LEVEL=DEBUG` in the .env file then check bot.log (or `docker logs`)
-- Run `/scan` to force an immediate resynchronization
-
-### "monitoring paused for this guild" in the logs
-
-```
-Guild 123...: configured tag is a role mention — it can never match a server tag;
-monitoring paused for this guild to avoid mass role removal
-```
-
-(or `configured tag is 26 characters (server tags are at most 4)` depending on the case — the value itself never appears in the logs.)
-
-An impossible-to-satisfy value was stored in the `tag` field: a pasted role mention, or a tag longer than 4 characters (Discord's server tag limit). Such a value can never match any member: without a safeguard, the bot would conclude nobody carries the tag anymore and strip the roles from the whole server. It therefore pauses monitoring and **touches no role at all** until the configuration is fixed.
-
-**Fix**: run `/config` again with the short server tag (e.g. `tag:VIP`) and leave the roles in the `roles` field. `/status` keeps showing the alert for as long as the configuration is broken.
-
-### Permission errors
-
-```
-Guild 123...: missing permissions to manage roles — my role is probably
-below the configured roles, or I lack Manage Roles
-```
-
-- The bot must have a role higher than the roles it's trying to assign (Server Settings → Roles, drag the bot's role above them)
-- Check that the bot has the "Manage Roles" permission
-- `/status` reports how many distinct members could not be updated since the last scan (scan and real-time events included)
-- The message appears once per server per scan, not one line per member
-
-### High CPU/RAM usage
-- Increase the verification interval in `tag_monitor.py`
-- Reduce the number of monitored servers
-- Check logs for looping errors
-
-## 📄 License
-
-This project is under MIT license.
-
-## 📜 Legal Information
-
-- [Terms of Service](TERMS_OF_SERVICE.md)
-- [Privacy Policy](PRIVACY_POLICY.md)
-
-Both documents are also reachable straight from Discord via `/help`, without leaving the server.
+Code under the MIT license. Open-source availability is not a certification of compliance or approval by Discord.

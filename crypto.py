@@ -1,110 +1,75 @@
-"""Chiffrement au repos des valeurs stockées en base.
+"""Chiffrement des valeurs API et index opaques pour le stockage SQLite.
 
-Chiffrement applicatif : les identifiants qui servent de clés (guild_id, date)
-restent en clair pour rester indexables, toutes les valeurs sont chiffrées avec
-Fernet (AES-128-CBC + HMAC-SHA256, clé dans ENCRYPTION_KEY).
-
-Conséquences :
-- une copie du fichier de base, ou d'une sauvegarde, est inexploitable sans la clé,
-  qui n'est jamais écrite sur le disque de données ;
-- sans ENCRYPTION_KEY le bot fonctionne en clair, pour ne pas casser les
-  installations auto-hébergées existantes ;
-- la migration est transparente : les valeurs en clair déjà présentes sont chiffrées
-  au démarrage, et les valeurs chiffrées sont reconnues à leur préfixe.
+La clé Fernet est fournie séparément du volume de données. Les valeurs API
+sont chiffrées ; l'index de serveur est un HMAC dérivé de cette clé.
+Les dates, métadonnées internes et la structure SQLite restent visibles.
 """
 from __future__ import annotations
 
-import logging
+import base64
+import hashlib
+import hmac
 import os
 from typing import Optional
 
-logger = logging.getLogger('PickTag2GetRole.Crypto')
+from cryptography.fernet import Fernet, InvalidToken
 
-# Préfixe des jetons Fernet (version 0x80 encodée en base64url)
 FERNET_PREFIX = 'gAAAAA'
 
 
 class EncryptionKeyError(RuntimeError):
-    """Clé absente ou incorrecte face à des données déjà chiffrées."""
+    """Clé absente, incorrecte ou données chiffrées illisibles."""
 
 
 class FieldCipher:
-    """Chiffre/déchiffre les valeurs texte stockées en base."""
+    """Chiffrement obligatoire ; aucune clé n'est générée implicitement."""
 
     def __init__(self, key: Optional[str] = None):
-        raw_key = key if key is not None else os.getenv('ENCRYPTION_KEY', '')
-        raw_key = (raw_key or '').strip()
-
-        self._fernet = None
-        if raw_key:
-            try:
-                from cryptography.fernet import Fernet
-            except ImportError as e:  # pragma: no cover - dépendance déclarée
-                raise EncryptionKeyError(
-                    "ENCRYPTION_KEY is set but the 'cryptography' package is missing. "
-                    "Install requirements.txt or unset ENCRYPTION_KEY."
-                ) from e
-            try:
-                self._fernet = Fernet(raw_key)
-            except (ValueError, TypeError) as e:
-                raise EncryptionKeyError(
-                    "ENCRYPTION_KEY is not a valid Fernet key. Generate one with: "
-                    "python -c \"from cryptography.fernet import Fernet; "
-                    "print(Fernet.generate_key().decode())\""
-                ) from e
+        raw_key = (key if key is not None else os.getenv('ENCRYPTION_KEY', '')).strip()
+        if not raw_key:
+            raise EncryptionKeyError('ENCRYPTION_KEY is required. Restore or configure a Fernet key.')
+        try:
+            self._fernet = Fernet(raw_key)
+            key_bytes = base64.urlsafe_b64decode(raw_key)
+        except (ValueError, TypeError) as exc:
+            raise EncryptionKeyError('ENCRYPTION_KEY is not a valid Fernet key.') from exc
+        self._index_key = hmac.new(
+            key_bytes, b'PickTag2GetRole:guild-index:v1', hashlib.sha256
+        ).digest()
 
     @property
     def enabled(self) -> bool:
-        return self._fernet is not None
+        return True
 
     @staticmethod
     def looks_encrypted(value) -> bool:
         return isinstance(value, str) and value.startswith(FERNET_PREFIX)
 
+    def guild_index(self, guild_id: int) -> str:
+        return hmac.new(
+            self._index_key, str(int(guild_id)).encode('ascii'), hashlib.sha256
+        ).hexdigest()
+
     def encrypt(self, value):
-        """Chiffrer une valeur texte (None et chaînes vides passent tel quel)."""
-        if self._fernet is None or value is None or value == '':
-            return value
-        if self.looks_encrypted(value):
-            return value  # déjà chiffré, ne pas empiler les couches
+        if value is None:
+            return None
+        # Un tag ressemblant à un jeton Fernet doit aussi être chiffré.
         return self._fernet.encrypt(str(value).encode('utf-8')).decode('ascii')
 
     def decrypt(self, value):
-        """Déchiffrer une valeur ; les valeurs en clair (pré-migration) sont rendues telles quelles."""
-        if value is None or value == '':
+        """Accepte le clair uniquement pour la migration du schéma historique."""
+        if value is None or not self.looks_encrypted(value):
             return value
-        if not self.looks_encrypted(value):
-            # Donnée écrite avant l'activation du chiffrement
-            return value
-        if self._fernet is None:
-            raise EncryptionKeyError(
-                "The database contains encrypted values but ENCRYPTION_KEY is not set. "
-                "Restore the key used to write this database, or restore a plaintext backup."
-            )
-        from cryptography.fernet import InvalidToken
         try:
             return self._fernet.decrypt(value.encode('ascii')).decode('utf-8')
-        except InvalidToken as e:
+        except (InvalidToken, UnicodeError, ValueError) as exc:
             raise EncryptionKeyError(
-                "ENCRYPTION_KEY does not match the key used to encrypt this database. "
-                "Restore the original key, or restore a backup written with the current key."
-            ) from e
+                'Stored data cannot be decrypted. Restore the original ENCRYPTION_KEY.'
+            ) from exc
 
     def encrypt_int(self, value: Optional[int]):
-        if self._fernet is None or value is None:
-            return value
-        return self.encrypt(str(int(value)))
+        return None if value is None else self.encrypt(str(int(value)))
 
     def decrypt_int(self, value, default: int = 0) -> int:
-        """Déchiffrer un compteur ; toute valeur illisible dégrade à `default`.
-
-        EncryptionKeyError inclus : un compteur de statistique corrompu doit
-        s'afficher à 0, pas casser /stats pendant 30 jours — /config ne réécrit
-        jamais tag_stats, aucune commande ne pourrait donc réparer la ligne.
-        """
-        if value is None:
-            return default
-        try:
-            return int(self.decrypt(value))
-        except (TypeError, ValueError, EncryptionKeyError):
-            return default
+        """Ne pas masquer une erreur de clé en affichant un faux compteur."""
+        return default if value is None else int(self.decrypt(value))

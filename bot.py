@@ -4,7 +4,6 @@ import math
 import os
 import time
 import logging
-from logging.handlers import RotatingFileHandler
 from datetime import datetime, timezone
 
 import asyncio
@@ -14,6 +13,7 @@ from typing import Dict, Optional
 from crypto import EncryptionKeyError
 from database import DatabaseManager
 from i18n import t, CommandTranslator
+from safe_logging import configure_logging
 
 # Charger les variables d'environnement EN PREMIER
 load_dotenv()
@@ -23,29 +23,19 @@ log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
 # LOG_FILE="" désactive le fichier (ex: sous Docker, stdout suffit et Docker gère la rotation)
 log_file = os.getenv('LOG_FILE', 'bot.log')
 
-log_handlers: list = [logging.StreamHandler()]
-if log_file:
-    # Rotation pour ne jamais remplir le disque du VPS : 5 Mo x 3 fichiers max
-    log_handlers.append(RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8'))
-
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=log_handlers
-)
+configure_logging(log_level, log_file)
 logger = logging.getLogger('PickTag2GetRole')
-logger.info(f"Logging level set to: {log_level}")
-logger.info(f"Discord.py version: {discord.__version__}")
+logger.info("Application logging initialized")
 
 # Uniquement les intents réellement nécessaires (moins d'événements = moins de CPU/bande passante,
 # et pas de données reçues au-delà de ce que la privacy policy annonce) :
 # - guilds : événements de serveur et cache des rôles
 # - members (privilégié) : on_member_join/update, fetch_members pour les scans
-# - presences (privilégié) : les changements de tag (primary_guild) arrivent via PRESENCE_UPDATE
+# Les changements de primary_guild arrivent aussi via GUILD_MEMBER_UPDATE.
+# Presence et Message Content ne sont pas necessaires a cette fonctionnalite.
 intents = discord.Intents.none()
 intents.guilds = True
 intents.members = True
-intents.presences = True
 
 class PickTag2GetRole(commands.Bot):
     def __init__(self):
@@ -78,7 +68,8 @@ class PickTag2GetRole(commands.Bot):
         # Localisation native des commandes slash (appliquée à la synchronisation)
         await self.tree.set_translator(CommandTranslator())
 
-        await self.db.initialize()
+        await self.db.initialize(backup_keep=self.backup_keep)
+        await self.db.maintenance(keep=self.backup_keep)
 
         await self.load_configs_to_cache()
         await self.load_extension('cogs.tag_monitor')
@@ -87,14 +78,24 @@ class PickTag2GetRole(commands.Bot):
         # Gestionnaire d'erreur simple pour les commandes en DM
         self.tree.on_error = self.on_app_command_error
 
-        if self.backup_enabled:
-            self.daily_backup.start()
-        else:
+        self.storage_maintenance.start()
+        self.daily_backup.start()
+        if not self.backup_enabled:
             logger.info("Database backups disabled (BACKUP_ENABLED=false)")
 
         self.heartbeat.start()
 
-        logger.info(f"Bot ready! Connected as {self.user}")
+        logger.info("Bot initialization completed")
+
+    async def on_error(self, event_method, *args, **kwargs):
+        # Le gestionnaire par defaut imprime une traceback et les arguments API.
+        logger.error("Discord event handler failed; operation was not completed")
+
+    async def close(self):
+        self.heartbeat.cancel()
+        self.daily_backup.cancel()
+        self.storage_maintenance.cancel()
+        await super().close()
 
     @tasks.loop(minutes=1)
     async def heartbeat(self):
@@ -108,8 +109,8 @@ class PickTag2GetRole(commands.Bot):
         try:
             with open(self.heartbeat_file, 'w') as f:
                 f.write(str(int(time.time())))
-        except OSError as e:
-            logger.warning(f"Could not write heartbeat file: {e}")
+        except OSError:
+            logger.warning("Could not write heartbeat file")
 
     @heartbeat.before_loop
     async def before_heartbeat(self):
@@ -119,18 +120,33 @@ class PickTag2GetRole(commands.Bot):
     async def daily_backup(self):
         """Sauvegarde quotidienne de la base, précédée d'un contrôle d'intégrité"""
         try:
-            result = await self.db.integrity_check()
-            self.db_integrity = result
-            if result != 'ok':
-                # Ne surtout pas écraser ni purger les sauvegardes saines existantes
-                logger.error(f"DATABASE INTEGRITY CHECK FAILED ({result}) — "
-                             f"skipping backup and rotation; restore from data/backups/")
+            # La retention ne depend ni de la creation de nouveaux snapshots,
+            # ni du resultat du controle d'integrite de la base principale.
+            await self.db.maintenance(keep=self.backup_keep)
+            if not self.backup_enabled:
                 return
-            path = await self.db.backup(keep=self.backup_keep)
+            result = await self.db.integrity_check()
+            self.db_integrity = 'ok' if result == 'ok' else 'failed'
+            if result != 'ok':
+                logger.error("Database integrity check failed; new backup skipped")
+                return
+            await self.db.backup(keep=self.backup_keep)
             self.last_backup_at = datetime.now(timezone.utc)
-            logger.info(f"Database backup written: {path} ({os.path.getsize(path) / 1024:.0f} KB)")
-        except Exception as e:
-            logger.error(f"Database backup failed: {e}")
+            logger.info("Database backup completed")
+        except Exception:
+            logger.error("Database backup or retention maintenance failed")
+
+    @tasks.loop(hours=1)
+    async def storage_maintenance(self):
+        """Appliquer la retention meme quand les sauvegardes sont desactivees."""
+        try:
+            await self.db.maintenance(keep=self.backup_keep)
+        except Exception:
+            logger.error("Storage retention maintenance failed; retry scheduled")
+
+    @storage_maintenance.before_loop
+    async def before_storage_maintenance(self):
+        await self.wait_until_ready()
 
     @daily_backup.before_loop
     async def before_daily_backup(self):
@@ -149,10 +165,10 @@ class PickTag2GetRole(commands.Bot):
               and isinstance(error.original, EncryptionKeyError)):
             # Config stockée illisible (clé changée, jeton corrompu) : donner la
             # sortie à l'admin (/config ou /reset) au lieu d'une erreur générique
-            logger.error(f"Unreadable stored config in guild {interaction.guild_id}: {error.original}")
+            logger.error("Stored configuration could not be decrypted")
             message = t(locale, 'err.config_unreadable')
         else:
-            logger.error(f"Command error: {error}")
+            logger.error("Application command failed")
             message = t(locale, 'err.generic')
 
         try:
@@ -173,9 +189,9 @@ class PickTag2GetRole(commands.Bot):
             # reconfiguration pendant l'incident écrirait sous la mauvaise clé.
             # L'exception remonte via setup_hook et le processus sort en erreur.
             raise
-        except Exception as e:
-            logger.error(f"Error loading configs to cache: {e}")
-            self.config_cache = {}
+        except Exception:
+            logger.error("Loading stored configurations failed")
+            raise
     
 
     async def refresh_cache(self, guild_id: int):
@@ -201,63 +217,68 @@ class PickTag2GetRole(commands.Bot):
         await self.refresh_cache(guild_id)
 
 # Créer et lancer le bot. La construction valide ENCRYPTION_KEY (FieldCipher) :
-# une clé malformée lève ici, avant le try de fin de fichier — donner le même
+# une clé malformée lève ici, avant le try de fin de fichier : donner le même
 # message actionnable plutôt qu'une traceback brute.
 try:
     bot = PickTag2GetRole()
-except EncryptionKeyError as e:
-    logger.critical("Encryption key problem: %s", e)
+except EncryptionKeyError:
+    logger.critical("Encryption setup failed; restore a valid ENCRYPTION_KEY")
     raise SystemExit(1)
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     """When bot joins a new server"""
-    logger.info(f"Bot joined server {guild.id} | Total servers: {len(bot.guilds)}")
+    logger.info("Bot joined a server")
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
     """When bot is removed from a server, delete its data"""
-    await bot.db.delete_guild_config(guild.id)
-    async with bot.cache_lock:
-        bot.config_cache.pop(guild.id, None)
-    logger.info(f"Bot removed from server {guild.id}, data deleted | Total servers: {len(bot.guilds)}")
+    monitor = bot.get_cog('TagMonitor')
+    if monitor:
+        await monitor.delete_guild_data(guild.id)
+    else:
+        async with bot.cache_lock:
+            bot.config_cache.pop(guild.id, None)
+        await bot.db.delete_guild_config(guild.id)
+    logger.info("Removed server data")
 
 @bot.event
 async def on_ready():
     """Événement déclenché quand le bot est prêt"""
-    logger.info(f'Bot connected as {bot.user.name}')
-    logger.info(f'ID: {bot.user.id}')
-    logger.info(f'Servers: {len(bot.guilds)}')
+    logger.info('Bot connected')
 
     # Synchroniser les commandes slash (une seule fois : on_ready se re-déclenche
     # à chaque reconnexion et la synchro est fortement rate-limitée par Discord)
     if not bot.synced:
         try:
-            synced = await bot.tree.sync()
+            await bot.tree.sync()
             bot.synced = True
-            logger.info(f"{len(synced)} commands synced")
-        except Exception as e:
-            logger.error(f"Error syncing commands: {e}")
+            logger.info("Commands synced")
+        except Exception:
+            logger.error("Command synchronization failed")
 
     # Purger les données des serveurs qui ont retiré le bot pendant qu'il
     # n'écoutait pas : Discord ne rejoue pas un GUILD_DELETE manqué, que ce
     # soit parce que le process était éteint OU parce que la session gateway a
-    # été invalidée (re-IDENTIFY) — d'où une exécution à CHAQUE on_ready, pas
+    # été invalidée (re-IDENTIFY) : d'où une exécution à CHAQUE on_ready, pas
     # seulement au premier. C'est sûr : READY liste toujours toutes les guilds,
     # y compris les indisponibles (panne Discord), qui ne sont donc jamais
     # considérées comme orphelines. La privacy policy promet cette suppression.
     try:
         present = {g.id for g in bot.guilds}
         orphans = [gid for gid in await bot.db.get_all_guild_ids() if gid not in present]
+        monitor = bot.get_cog('TagMonitor')
         for gid in orphans:
-            await bot.db.delete_guild_config(gid)
-            async with bot.cache_lock:
-                bot.config_cache.pop(gid, None)
+            if monitor:
+                await monitor.delete_guild_data(gid)
+            else:
+                async with bot.cache_lock:
+                    bot.config_cache.pop(gid, None)
+                await bot.db.delete_guild_config(gid)
         if orphans:
-            logger.info(f"Removed stored data for {len(orphans)} guild(s) "
-                        f"that removed the bot while it was offline")
-    except Exception as e:
-        logger.error(f"Error reconciling stored guilds: {e}")
+            logger.info("Removed stored data for servers that removed the bot while it was offline")
+    except Exception:
+        logger.error("Stored server reconciliation failed")
 
 async def main():
     """Fonction principale pour lancer le bot"""
@@ -266,10 +287,7 @@ async def main():
         logger.error("Discord token not found in .env file")
         return
 
-    if bot.db.cipher.enabled:
-        logger.info("Encryption at rest: enabled")
-    else:
-        logger.warning("Encryption at rest: disabled (no ENCRYPTION_KEY set)")
+    logger.info("Encryption at rest: enabled")
 
     async with bot:
         await bot.start(token)
@@ -277,8 +295,11 @@ async def main():
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except EncryptionKeyError as e:
+    except EncryptionKeyError:
         # Mieux vaut refuser de démarrer que tourner avec des données illisibles
         # et écraser des configurations valides.
-        logger.critical("Encryption key problem: %s", e)
+        logger.critical("Encryption validation failed; verify the original key and stored files")
+        raise SystemExit(1)
+    except Exception:
+        logger.critical("Bot startup or operation failed; check configuration and storage health")
         raise SystemExit(1)

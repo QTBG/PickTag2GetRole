@@ -38,7 +38,7 @@ def t(locale, key: str, **kwargs) -> str:
     """Traduire une clé de réponse pour la locale donnée (repli sur l'anglais)."""
     entry = RESPONSES.get(key)
     if entry is None:
-        logger.warning("Missing i18n key: %s", key)
+        logger.warning("A translation key is missing")
         return key
     text = entry.get(normalize_locale(locale)) or entry[DEFAULT_LOCALE]
     if kwargs:
@@ -70,12 +70,12 @@ COMMAND_LOCALIZATIONS: dict[str, dict[str, str]] = {
         'it': "Configura il bot per monitorare un tag del server",
         'pt-BR': "Configurar o bot para monitorar uma tag do servidor",
     },
-    "The server tag to monitor": {
-        'fr': "Le tag de serveur à surveiller",
-        'es': "La etiqueta del servidor a supervisar",
-        'de': "Der zu überwachende Server-Tag",
-        'it': "Il tag del server da monitorare",
-        'pt-BR': "A tag do servidor a monitorar",
+    "This server's own tag to monitor": {
+        'fr': "Le tag de ce serveur à surveiller",
+        'es': "La etiqueta de este servidor a supervisar",
+        'de': "Der eigene Tag dieses Servers",
+        'it': "Il tag di questo server da monitorare",
+        'pt-BR': "A tag deste servidor a monitorar",
     },
     "Roles to assign (mention roles separated by spaces)": {
         'fr': "Rôles à attribuer (mentionnez les rôles séparés par des espaces)",
@@ -387,12 +387,12 @@ RESPONSES: dict[str, dict[str, str]] = {
         'pt-BR': "✅ Configuração atualizada",
     },
     'config.updated_desc': {
-        'en': "The bot will now monitor the tag **{tag}**",
-        'fr': "Le bot surveille désormais le tag **{tag}**",
-        'es': "El bot ahora supervisará la etiqueta **{tag}**",
-        'de': "Der Bot überwacht jetzt den Tag **{tag}**",
-        'it': "Il bot ora monitorerà il tag **{tag}**",
-        'pt-BR': "O bot agora vai monitorar a tag **{tag}**",
+        'en': "The bot will monitor **{tag}** from this server. Identical tags from other servers do not qualify.",
+        'fr': "Le bot surveille **{tag}** de ce serveur. Les tags identiques d'autres serveurs ne comptent pas.",
+        'es': "El bot supervisará **{tag}** de este servidor. Las etiquetas iguales de otros servidores no cuentan.",
+        'de': "Der Bot überwacht **{tag}** dieses Servers. Gleiche Tags anderer Server zählen nicht.",
+        'it': "Il bot monitorerà **{tag}** di questo server. I tag identici di altri server non contano.",
+        'pt-BR': "O bot monitorará **{tag}** deste servidor. Tags iguais de outros servidores não contam.",
     },
     'config.roles_field': {
         'en': "Roles to assign",
@@ -721,6 +721,14 @@ RESPONSES: dict[str, dict[str, str]] = {
         'de': "⏳ Für diesen Server läuft bereits ein Scan. Bitte warte, bis er abgeschlossen ist.",
         'it': "⏳ Una scansione è già in corso per questo server. Attendi che finisca.",
         'pt-BR': "⏳ Já existe um escaneamento em andamento para este servidor. Aguarde a conclusão.",
+    },
+    'scan.cancelled': {
+        'en': "Scan stopped because the configuration changed or monitoring was disabled.",
+        'fr': "Scan arrêté : la configuration a changé ou la surveillance a été désactivée.",
+        'es': "Escaneo detenido porque cambió la configuración o se desactivó la supervisión.",
+        'de': "Scan gestoppt: Die Konfiguration wurde geändert oder die Überwachung deaktiviert.",
+        'it': "Scansione interrotta: la configurazione è cambiata o il monitoraggio è stato disattivato.",
+        'pt-BR': "Escaneamento interrompido: a configuração mudou ou o monitoramento foi desativado.",
     },
     'scan.done_title': {
         'en': "✅ Scan completed",

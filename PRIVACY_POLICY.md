@@ -1,65 +1,62 @@
-# Privacy Policy - PickTag2GetRole Bot
+# Privacy Policy - PickTag2GetRole
 
-*Last updated: July 2026*
+*Last updated: September 21, 2026*
 
-## What We Collect
-- **Server Information**: Discord server ID where the bot is installed
-- **User Information**: Discord user IDs of server members (processed in memory only, never stored)
-- **Tag Configuration**: The specific server tag you configure the bot to monitor
-- **Role Configuration**: The role IDs you configure to be assigned/removed
-- **Primary Guild Data**: User's primary server information (server ID, tag, and whether it's publicly displayed), processed in memory only
-- **Aggregated Statistics**: One daily counter per server (number of members displaying the configured tag, total member count) — numbers only, no user IDs
+PickTag2GetRole assigns and removes Discord roles when members display the configured tag of the server where the bot is installed. This policy describes the data handled by this version of the bot. If you self-host it, you operate your own instance and are responsible for its hosting, access controls, external backups and privacy information.
 
-## Discord Gateway Intents
-The bot only subscribes to the minimum Discord gateway intents required to function:
-- **Guilds**: server and role information
-- **Server Members** (privileged): member list and member updates, used for role assignment and scans
-- **Presences** (privileged): required to detect server tag (primary guild) changes in real time
+## Data Received and Used
 
-The bot does **not** subscribe to message, reaction, typing, voice, or moderation events.
+Discord provides server, role and member information to the bot. The Discord library keeps some of that information in memory to process member updates and manage roles. This can include Discord user and server IDs, member profiles, current roles, and public primary-guild information (source server ID, tag and whether the identity is displayed).
 
-## How We Use Data
-- Monitor if users have the configured server tag in their profile
-- Automatically assign or remove the configured roles based on tag presence
-- Store your configuration settings in a local SQLite database
-- Respond to tag changes in real-time using Discord events
-- Perform a verification at startup and once daily as backup
+The role decision uses the public primary-guild information and current roles. The tag must belong to the server being monitored and match the configured text, ignoring case. The bot checks new members and member updates, runs a reconciliation at startup and daily, and supports a manual `/scan`.
 
-## We Do NOT
-- Read or store message content
-- Access private messages or DMs
-- Share any data with third parties
-- Store any personal information beyond Discord IDs
-- Track user activity beyond tag presence
-- Access any data outside of the configured server
+The bot requests these Gateway intents:
 
-## Data Storage
-- All data is stored locally in SQLite database files
-- Database location: `data/bot_data.db`
-- Only configuration data (guild_id, tag_to_watch, role_ids, enabled status) and daily aggregated counters (tagged member count, total member count per server — no user IDs) are persisted
-- Automatic local backups of this database are kept in `data/backups/` (rotated daily, 7 files by default)
-- User data is only processed in memory for tag checking
+- **Guilds**: server and role information.
+- **Server Members** (privileged): member lists, joins and member updates, including changes to the public primary guild.
 
-## Your Rights
-- View your configuration with `/status` command
-- Disable monitoring with `/toggle` command
-- Delete all stored data instantly with the `/reset` command
-- Remove all data by kicking the bot from your server (data is automatically deleted)
-- Request manual data deletion via GitHub
+It does not request **Presence** or **Message Content**. It does not subscribe to message, reaction, typing or voice events, and does not use messages, games, activities, online status or connection histories for its functionality.
 
-## Data Retention
-- Configuration data is kept as long as the bot remains in your server
-- Aggregated daily statistics are kept for at most 365 days
-- When the bot is removed (or `/reset` is used), all server data — configuration and statistics — is automatically deleted
-- Deleted data may persist in local daily backups for up to 7 days before rotation removes it
-- No user data is permanently stored
+## Data Stored
+
+The local SQLite database, `data/bot_data.db`, stores:
+
+- Server configuration: server ID, configured tag, configured role IDs, monitoring state and configuration timestamps.
+- Daily statistics: server ID, date, number of members displaying the matching tag, and total member count. These are aggregate counts, without user IDs or an individual tag history.
+- A pending deletion marker identifying the server if cleanup must be retried. It is removed when cleanup succeeds.
+
+Member profiles, user IDs, individual roles and individual tag decisions are processed in memory, not written to the application database. The application logs operational events and error categories without Discord IDs, names, tag text, role values or raw API payloads. Raw library logs and exception details are excluded from the application's log output, including at `DEBUG` level. Host, container or infrastructure logs are controlled by the hosting operator separately. Earlier releases could log Discord IDs; updating the application does not erase historical logs, which the operator must delete or expire separately.
+
+Automatic database snapshots may be created in `data/backups/`. They contain the same categories of stored data as the live database.
+
+## Purposes and Access
+
+The data is used to synchronize configured roles, answer the bot's commands, show aggregate tag statistics, recover the database and diagnose operational failures.
+
+Configuration and statistics are scoped to the current server. Management commands require Discord's **Manage Roles** permission, checked when the command runs. `/botstats` is restricted to the bot owner.
+
+Discord receives the API requests needed to operate the bot. The operator and technical hosting providers may access the infrastructure used to run it. The bot does not sell data or send it to advertising, analytics or other external application services.
+
+## Retention and Deletion
+
+- Configuration is kept until `/reset` is completed or the bot's departure from the server is processed. At startup, the bot also removes data for servers it has left while offline.
+- The statistics window contains at most 365 daily dates, including the current UTC date. Expired records are removed during startup and hourly maintenance while the bot is running, including from managed local backups.
+- Managed local backups are limited by both age and count: files dated seven or more days before the current UTC date are removed during maintenance, and at most `BACKUP_KEEP` files are kept (default: 7). Older modification timestamps can cause earlier expiry. Hourly retention maintenance still runs when new backups are disabled. An offline process cannot perform maintenance; it resumes on startup.
+- `/reset` and departure cleanup delete that server's configuration and statistics from the live database and all managed local backups. The bot reports a command failure if deletion cannot be completed. A scan that was running cannot recreate deleted records after a successful reset.
+- Copies created outside `data/backups/`, such as host snapshots or manually exported databases, are outside the bot's control. The operator must apply deletion and retention to those copies as well, and avoid restoring deleted data.
+
+## Controls and Requests
+
+Members with **Manage Roles** can inspect the server's configuration with `/status`, view aggregate counts with `/stats`, stop monitoring with `/toggle`, and delete stored server data with `/reset`. Disabling monitoring or resetting waits for any role operation already in progress to finish and stops subsequent processing for that configuration. These commands leave roles already assigned in Discord in place.
+
+Disabling monitoring is not an individual opt-out from Discord delivering member information. The Discord library can still receive and cache member data while the bot remains installed. There is no per-member opt-out command. Removing or hiding the public tag changes role eligibility but does not prevent Discord from delivering member updates. Removing the bot ends its access to the server.
+
+For questions or a manual access or deletion request, open an issue in the [project's GitHub issue tracker](https://github.com/QTBG/PickTag2GetRole/issues). Issues are public: describe the request without posting tokens, encryption keys, private member data or database files. For a separately hosted instance, contact its operator as well.
 
 ## Security
-- Stored values (configured tag, role IDs, aggregated counters) are encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256); the key is held outside the data volume, so database files and backups are unusable without it
-- Data is stored locally with file system permissions
-- No external API calls except Discord's official API
-- Logs contain Discord IDs only (never usernames or message content) and are automatically rotated
-- Open-source code allows full transparency
 
-## Contact
-Questions or concerns: https://github.com/QTBG/PickTag2GetRole
+`ENCRYPTION_KEY` is required. The bot refuses to start with a missing, malformed or incompatible key. Stored server IDs, tag text, role IDs and aggregate counts are encrypted with Fernet (AES-128-CBC and HMAC-SHA256). Server lookups use a keyed HMAC index instead of a plaintext Discord ID.
+
+This is application-level field encryption. Table structure, dates, configuration timestamps, monitoring state, row counts and pseudonymous lookup indexes remain visible in the SQLite files. The database is not an entirely opaque encrypted file. The key must be protected separately from the data volume.
+
+Existing database files and managed local backups are migrated before normal operation; incomplete migration prevents startup. Filesystem permissions and hosting security remain the operator's responsibility. Source code is available in the [public repository](https://github.com/QTBG/PickTag2GetRole).
